@@ -1,2 +1,3 @@
 packages:
   - apps/lending-api
+  - apps/web

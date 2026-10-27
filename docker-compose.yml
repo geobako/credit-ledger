@@ -74,5 +74,16 @@ services:
       lending-api:
         condition: service_healthy
 
+  # Customer app and ops console: static build behind nginx, which proxies /api to lending-api.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '8080:8080'
+    depends_on:
+      lending-api:
+        condition: service_healthy
+
 volumes:
   pgdata:

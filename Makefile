@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install up down reset logs db migrate dev build lint typecheck test test-int test-go lint-go format
+.PHONY: help install up down reset logs db migrate dev web build lint typecheck test test-int test-go lint-go format
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -11,6 +11,7 @@ up: ## Build and start the full stack
 	docker compose up --build -d
 	@echo "lending-api  → http://localhost:3000  (docs: /docs)"
 	@echo "card-gateway → http://localhost:8081"
+	@echo "web          → http://localhost:8080"
 
 down: ## Stop the stack
 	docker compose down
@@ -31,6 +32,9 @@ migrate: db ## Apply database migrations to the local Postgres
 dev: migrate ## Run lending-api locally in watch mode against dockerised Postgres
 	cp -n .env.example apps/lending-api/.env 2>/dev/null || true
 	pnpm --filter lending-api start:dev
+
+web: ## Run the web app with hot reload (expects lending-api on :3000, e.g. `make dev`)
+	pnpm --filter web dev
 
 build: ## Build all packages
 	pnpm build
