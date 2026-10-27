@@ -39,3 +39,9 @@ CLAUDE.md
 
 # Load-test fixtures (generated)
 load/.fixtures.json
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan

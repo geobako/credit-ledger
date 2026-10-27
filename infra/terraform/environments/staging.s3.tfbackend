@@ -1,0 +1,3 @@
+bucket = "acme-credit-staging-tfstate"
+key    = "acme-credit/terraform.tfstate"
+region = "eu-west-1"

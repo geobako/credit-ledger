@@ -64,6 +64,15 @@ jobs:
       - run: go vet ./...
       - run: go test -race -count=1 ./...
 
+  terraform:
+    name: Terraform · fmt, validate, security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: make tf-validate
+      - run: make tf-scan
+
   e2e:
     name: E2E · full stack in Docker, then a load smoke test
     runs-on: ubuntu-latest

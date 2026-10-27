@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install up down reset logs db migrate dev web build lint typecheck test test-int test-go lint-go e2e load format
+.PHONY: help install up down reset logs db migrate dev web build lint typecheck test test-int test-go lint-go e2e load tf-validate tf-scan format
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -57,6 +57,17 @@ e2e: ## End-to-end suite against the running stack (start it with `make up`)
 load: ## Seed 100 cards, then run the k6 load test on the compose network (stack must be up)
 	pnpm --filter e2e load:seed 100
 	docker run --rm --network acme-credit_default -v $(CURDIR)/load:/load -w /load grafana/k6:1.3.0 run authorize.k6.js
+
+# Terraform and Trivy run in containers too.
+TF_RUN = docker run --rm -v $(CURDIR)/infra/terraform:/tf -w /tf -v acme-tf-plugins:/plugins -e TF_PLUGIN_CACHE_DIR=/plugins hashicorp/terraform:1.13.4
+
+tf-validate: ## terraform fmt -check + validate (no AWS credentials needed)
+	$(TF_RUN) fmt -check -recursive
+	$(TF_RUN) init -backend=false -input=false
+	$(TF_RUN) validate
+
+tf-scan: ## Static security scan of the Terraform (Trivy misconfiguration checks)
+	docker run --rm -v $(CURDIR)/infra/terraform:/tf aquasec/trivy:0.67.2 config --skip-version-check --severity HIGH,CRITICAL --exit-code 1 /tf
 
 # Go runs in a container: no local toolchain needed.
 GO_RUN = docker run --rm -v $(CURDIR)/apps/card-gateway:/src -v acme-go-build-debian:/root/.cache/go-build -w /src golang:1.24

@@ -20,6 +20,9 @@ COPY --from=build /out/package.json ./package.json
 COPY --from=build /repo/apps/lending-api/dist ./dist
 COPY db/migrations ./db/migrations
 ENV MIGRATIONS_DIR=/app/db/migrations
+# Amazon RDS CA bundle, so the cloud DATABASE_URL can use sslmode=verify-full
+# (activated with NODE_EXTRA_CA_CERTS in the task definition; unused locally).
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
 USER node
 EXPOSE 3000
 CMD ["node", "dist/main.js"]
