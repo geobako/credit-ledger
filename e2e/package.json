@@ -1,0 +1,19 @@
+{
+  "name": "e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end suite against the running stack (docker compose up)",
+  "scripts": {
+    "e2e": "node --test --test-reporter=spec lifecycle.test.ts debt.test.ts idempotency.test.ts concurrency.test.ts security.test.ts && node --test --test-reporter=spec books.test.ts",
+    "typecheck": "tsc --noEmit",
+    "load:seed": "node load-seed.ts"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "typescript": "~5.8.3"
+  }
+}

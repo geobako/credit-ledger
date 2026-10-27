@@ -17,6 +17,10 @@ const envSchema = z
       .default('http://localhost:5173')
       .transform((v) => v.split(',').map((o) => o.trim())),
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(600),
+    /** Per client IP on sign-in/registration: throttles enumeration and account farming. */
+    /** Same-account hot-path requests queued in memory per process before shedding with 503. */
+    ACCOUNT_QUEUE_MAX_DEPTH: z.coerce.number().int().positive().default(100),
+    AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(10),
 
     /** ES256 key pair of the (simulated) identity provider. Generated per boot outside production. */
     JWT_PRIVATE_KEY: pem.optional(),

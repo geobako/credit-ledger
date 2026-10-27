@@ -16,6 +16,7 @@ const STATUS_BY_KIND: Record<DomainErrorKind, number> = {
   conflict: HttpStatus.CONFLICT,
   unprocessable: HttpStatus.UNPROCESSABLE_ENTITY,
   unauthenticated: HttpStatus.UNAUTHORIZED,
+  unavailable: HttpStatus.SERVICE_UNAVAILABLE,
   invariant: HttpStatus.INTERNAL_SERVER_ERROR,
 };
 

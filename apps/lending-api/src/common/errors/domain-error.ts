@@ -9,6 +9,7 @@ export type DomainErrorKind =
   | 'conflict' // the resource is in a state that does not allow this
   | 'unprocessable' // well-formed but refused by a business rule
   | 'unauthenticated'
+  | 'unavailable' // temporarily cannot serve this; safe to retry later
   | 'invariant'; // should be impossible: a bug, logged loudly
 
 /** Base class for expected business failures, with a stable machine-readable code. */

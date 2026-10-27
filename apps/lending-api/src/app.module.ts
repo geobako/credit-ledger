@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
+import { SIGN_IN_RATE_LIMITED } from './auth/decorators';
 import { AuthorizationsModule } from './authorizations/authorizations.module';
 import { CardsModule } from './cards/cards.module';
 import { ClosureModule } from './closure/closure.module';
@@ -22,6 +23,8 @@ import { OpsModule } from './ops/ops.module';
 import { RepaymentsModule } from './repayments/repayments.module';
 import { SandboxModule } from './sandbox/sandbox.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+
+const reflector = new Reflector();
 
 @Module({
   imports: [
@@ -61,7 +64,15 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     }),
     ThrottlerModule.forRootAsync({
       inject: [ENV],
-      useFactory: (env: Env) => [{ ttl: 60_000, limit: env.RATE_LIMIT_PER_MINUTE }],
+      useFactory: (env: Env) => [
+        { name: 'default', ttl: 60_000, limit: env.RATE_LIMIT_PER_MINUTE },
+        {
+          name: 'auth',
+          ttl: 60_000,
+          limit: env.AUTH_RATE_LIMIT_PER_MINUTE,
+          skipIf: (ctx) => !reflector.get<boolean>(SIGN_IN_RATE_LIMITED, ctx.getHandler()),
+        },
+      ],
     }),
     MetricsModule,
     DatabaseModule,

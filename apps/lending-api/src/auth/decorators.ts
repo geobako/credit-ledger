@@ -11,6 +11,10 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
 /** Restricts a route to the given roles. */
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES, roles);
 
+export const SIGN_IN_RATE_LIMITED = 'auth:sign-in-rate-limited';
+/** Puts an endpoint in the strict sign-in rate-limit bucket (see the `auth` throttler). */
+export const SignInRateLimited = () => SetMetadata(SIGN_IN_RATE_LIMITED, true);
+
 export type AuthenticatedRequest = Request & { principal?: Principal };
 
 export const CurrentPrincipal = createParamDecorator((_: unknown, ctx: ExecutionContext) => {

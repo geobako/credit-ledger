@@ -1,10 +1,9 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { User } from '../database/schema';
 import { UnauthenticatedError } from './auth.errors';
 import { DemoLoginDto, RegisterDto } from './auth.dto';
-import { CurrentPrincipal, Public } from './decorators';
+import { CurrentPrincipal, Public, SignInRateLimited } from './decorators';
 import { Principal } from './principal';
 import { TokenService } from './token.service';
 import { UsersService } from './users.service';
@@ -28,7 +27,7 @@ export class AuthController {
   ) {}
 
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @SignInRateLimited()
   @Post('auth/register')
   @ApiOperation({ summary: 'Register a customer (simulated IdP)' })
   async register(@Body() dto: RegisterDto) {
@@ -37,7 +36,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @SignInRateLimited()
   @Post('auth/demo-login')
   @HttpCode(200)
   @ApiOperation({ summary: 'Sign in as an existing demo user (simulated IdP, passwordless)' })

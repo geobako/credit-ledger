@@ -36,3 +36,6 @@ apps/card-gateway/bin/
 # AI assistant files (kept out of the repo)
 .claude/
 CLAUDE.md
+
+# Load-test fixtures (generated)
+load/.fixtures.json

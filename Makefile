@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help install up down reset logs db migrate dev web build lint typecheck test test-int test-go lint-go format
+.PHONY: help install up down reset logs db migrate dev web build lint typecheck test test-int test-go lint-go e2e load format
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install JS dependencies
 	pnpm install
@@ -50,6 +50,13 @@ test: ## Run unit tests
 
 test-int: ## Run integration tests against a throwaway Postgres (Testcontainers, needs Docker)
 	pnpm --filter lending-api test:int
+
+e2e: ## End-to-end suite against the running stack (start it with `make up`)
+	pnpm --filter e2e e2e
+
+load: ## Seed 100 cards, then run the k6 load test on the compose network (stack must be up)
+	pnpm --filter e2e load:seed 100
+	docker run --rm --network acme-credit_default -v $(CURDIR)/load:/load -w /load grafana/k6:1.3.0 run authorize.k6.js
 
 # Go runs in a container: no local toolchain needed.
 GO_RUN = docker run --rm -v $(CURDIR)/apps/card-gateway:/src -v acme-go-build-debian:/root/.cache/go-build -w /src golang:1.24

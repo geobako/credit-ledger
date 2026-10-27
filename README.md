@@ -26,7 +26,14 @@ make test      # unit tests
 make test-int  # integration + property tests against a throwaway Postgres (Testcontainers)
 make test-go   # Go gateway tests with the race detector (runs in Docker, no Go install needed)
 make lint typecheck
+
+make up && make e2e   # end-to-end suite: real gateway, signed webhooks, concurrency, security
+make load             # k6: steady gateway traffic + one contended "hot" card, then reconciliation
 ```
+
+CI (`.github/workflows/ci.yml`) runs all of the above on every push: lint, types, unit,
+integration (Testcontainers), Go with the race detector, then the full stack in Docker with the
+E2E suite and a short load smoke test.
 
 ## Layout
 
@@ -35,4 +42,6 @@ make lint typecheck
 | `apps/lending-api`  | NestJS service — source of truth for collateral, cards and the ledger                                 |
 | `apps/card-gateway` | Go service — card-network edge: validation, rate limits, circuit breaker, fail-closed timeouts        |
 | `apps/web`          | React + Tailwind customer app and operations console (ledger, audit, reconciliation, concurrency lab) |
+| `e2e`               | End-to-end suite (Node test runner) against the running stack, plus the load-test seeder              |
+| `load`              | k6 load test for the authorization hot path                                                           |
 | `db/migrations`     | SQL migrations (schema source of truth)                                                               |

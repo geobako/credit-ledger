@@ -20,6 +20,7 @@ import {
   CaptureExceedsAuthorizationError,
 } from './authorizations.errors';
 import { DeclineReason, declineReason } from './decline';
+import { KeyedSerializer } from '../common/concurrency/keyed-serializer';
 
 export interface AuthorizeRequest {
   networkTransactionId: string;
@@ -49,6 +50,9 @@ const big = (value: bigint) => sql`${value.toString()}::bigint`;
  */
 @Injectable()
 export class AuthorizationsService {
+  /** At most one in-flight transaction per credit account in this process (see KeyedSerializer). */
+  private readonly perAccount: KeyedSerializer;
+
   constructor(
     @Inject(DB) private readonly db: Database,
     @Inject(ENV) private readonly env: Env,
@@ -58,7 +62,9 @@ export class AuthorizationsService {
     private readonly accounts: CreditAccountsService,
     private readonly events: DomainEvents,
     private readonly metrics: Metrics,
-  ) {}
+  ) {
+    this.perAccount = new KeyedSerializer(env.ACCOUNT_QUEUE_MAX_DEPTH);
+  }
 
   /**
    * Approves (placing a hold) or declines a purchase. Idempotent on the network transaction id:
@@ -77,11 +83,18 @@ export class AuthorizationsService {
       },
     });
     const stopTimer = this.metrics.authorizationLatency.startTimer();
-    const result = await this.tx.run((tx) =>
-      this.idempotency.execute(
-        tx,
-        { scope: 'network:authorize', key: request.networkTransactionId, requestHash },
-        async () => ({ status: 200, body: await this.decide(tx, request) }),
+    // Unlocked lookup, only to pick the queue; decide() re-reads everything under the lock.
+    const [owner] = await this.db
+      .select({ creditAccountId: cards.creditAccountId })
+      .from(cards)
+      .where(eq(cards.networkToken, request.cardToken));
+    const result = await this.perAccount.run(owner?.creditAccountId ?? request.cardToken, () =>
+      this.tx.run((tx) =>
+        this.idempotency.execute(
+          tx,
+          { scope: 'network:authorize', key: request.networkTransactionId, requestHash },
+          async () => ({ status: 200, body: await this.decide(tx, request) }),
+        ),
       ),
     );
     stopTimer();
@@ -166,83 +179,94 @@ export class AuthorizationsService {
    * remainder. Idempotent: re-capturing with the same amount returns the captured authorization.
    */
   capture(id: string, amount?: Money) {
-    return this.tx.run(async (tx) => {
-      const { account, auth } = await this.lockAuthorization(tx, id);
-      const captureAmount = amount ?? Money.of(auth.amount, auth.currency as Currency);
+    return this.serialized(id, () =>
+      this.tx.run(async (tx) => {
+        const { account, auth } = await this.lockAuthorization(tx, id);
+        const captureAmount = amount ?? Money.of(auth.amount, auth.currency as Currency);
 
-      if (auth.status === 'CAPTURED' && auth.capturedAmount === captureAmount.minor) {
-        return present(auth);
-      }
-      if (auth.status !== 'HELD') {
-        throw new AuthorizationNotOpenError(
-          `authorization is ${auth.status.toLowerCase()} and cannot be captured`,
+        if (auth.status === 'CAPTURED' && auth.capturedAmount === captureAmount.minor) {
+          return present(auth);
+        }
+        if (auth.status !== 'HELD') {
+          throw new AuthorizationNotOpenError(
+            `authorization is ${auth.status.toLowerCase()} and cannot be captured`,
+          );
+        }
+        if (captureAmount.minor <= 0n || captureAmount.minor > auth.amount) {
+          throw new CaptureExceedsAuthorizationError(
+            'capture amount must be positive and at most the authorized amount',
+            {
+              authorized: Money.of(auth.amount, auth.currency as Currency).toJSON(),
+            },
+          );
+        }
+
+        const receivable = await this.ledger.ensureAccount(
+          tx,
+          'CARD_RECEIVABLE',
+          account.id,
+          captureAmount.currency,
         );
-      }
-      if (captureAmount.minor <= 0n || captureAmount.minor > auth.amount) {
-        throw new CaptureExceedsAuthorizationError(
-          'capture amount must be positive and at most the authorized amount',
-          {
-            authorized: Money.of(auth.amount, auth.currency as Currency).toJSON(),
+        const merchantPayable = await this.ledger.ensureAccount(
+          tx,
+          'MERCHANT_PAYABLE',
+          null,
+          captureAmount.currency,
+        );
+        const entry = await this.ledger.post(tx, {
+          type: 'PURCHASE_CAPTURED',
+          reference: `authorization:${auth.id}:captured`,
+          description: `Purchase at ${auth.merchantName}`,
+          metadata: { authorizationId: auth.id, creditAccountId: account.id },
+          postings: transfer(receivable.id, merchantPayable.id, captureAmount),
+        });
+
+        await tx
+          .update(creditAccounts)
+          .set({
+            heldAmount: sql`${creditAccounts.heldAmount} - ${big(auth.amount)}`,
+            outstandingBalance: sql`${creditAccounts.outstandingBalance} + ${big(captureAmount.minor)}`,
+          })
+          .where(eq(creditAccounts.id, account.id));
+        const [captured] = await tx
+          .update(authorizations)
+          .set({
+            status: 'CAPTURED',
+            capturedAmount: captureAmount.minor,
+            journalEntryId: entry.id,
+            resolvedAt: new Date(),
+          })
+          .where(eq(authorizations.id, auth.id))
+          .returning();
+        await this.events.emit(tx, {
+          type: 'AuthorizationCaptured',
+          entityType: 'authorization',
+          entityId: auth.id,
+          creditAccountId: account.id,
+          data: {
+            authorizationId: auth.id,
+            authorized: Money.of(auth.amount, captureAmount.currency).toJSON(),
+            captured: captureAmount.toJSON(),
+            journalEntryId: entry.id,
           },
-        );
-      }
-
-      const receivable = await this.ledger.ensureAccount(
-        tx,
-        'CARD_RECEIVABLE',
-        account.id,
-        captureAmount.currency,
-      );
-      const merchantPayable = await this.ledger.ensureAccount(
-        tx,
-        'MERCHANT_PAYABLE',
-        null,
-        captureAmount.currency,
-      );
-      const entry = await this.ledger.post(tx, {
-        type: 'PURCHASE_CAPTURED',
-        reference: `authorization:${auth.id}:captured`,
-        description: `Purchase at ${auth.merchantName}`,
-        metadata: { authorizationId: auth.id, creditAccountId: account.id },
-        postings: transfer(receivable.id, merchantPayable.id, captureAmount),
-      });
-
-      await tx
-        .update(creditAccounts)
-        .set({
-          heldAmount: sql`${creditAccounts.heldAmount} - ${big(auth.amount)}`,
-          outstandingBalance: sql`${creditAccounts.outstandingBalance} + ${big(captureAmount.minor)}`,
-        })
-        .where(eq(creditAccounts.id, account.id));
-      const [captured] = await tx
-        .update(authorizations)
-        .set({
-          status: 'CAPTURED',
-          capturedAmount: captureAmount.minor,
-          journalEntryId: entry.id,
-          resolvedAt: new Date(),
-        })
-        .where(eq(authorizations.id, auth.id))
-        .returning();
-      await this.events.emit(tx, {
-        type: 'AuthorizationCaptured',
-        entityType: 'authorization',
-        entityId: auth.id,
-        creditAccountId: account.id,
-        data: {
-          authorizationId: auth.id,
-          authorized: Money.of(auth.amount, captureAmount.currency).toJSON(),
-          captured: captureAmount.toJSON(),
-          journalEntryId: entry.id,
-        },
-      });
-      return present(captured!);
-    });
+        });
+        return present(captured!);
+      }),
+    );
   }
 
   /** The merchant cancels before settlement: the hold is released. Idempotent. */
   reverse(id: string) {
-    return this.tx.run((tx) => this.release(tx, id, 'REVERSED'));
+    return this.serialized(id, () => this.tx.run((tx) => this.release(tx, id, 'REVERSED')));
+  }
+
+  /** Queues work on an authorization behind other work on the same credit account. */
+  private async serialized<T>(authorizationId: string, task: () => Promise<T>): Promise<T> {
+    const [ref] = await this.db
+      .select({ creditAccountId: authorizations.creditAccountId })
+      .from(authorizations)
+      .where(eq(authorizations.id, authorizationId));
+    return this.perAccount.run(ref?.creditAccountId ?? authorizationId, task);
   }
 
   /** Releases holds the network never captured. Each one in its own short transaction. */

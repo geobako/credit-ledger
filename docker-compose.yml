@@ -46,6 +46,9 @@ services:
       GATEWAY_SHARED_SECRET: local-dev-gateway-secret-change-me-0123456789
       SANDBOX_ENABLED: 'true'
       WEB_ORIGINS: http://localhost:5173,http://localhost:8080
+      # Production keeps the default of 10 sign-ins/registrations per IP per minute (covered by
+      # the auth integration test). Raised locally so the E2E suite can register its customers.
+      AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-300}
     ports:
       - '3000:3000'
     depends_on:
