@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install up down reset logs db migrate dev build lint typecheck test test-int format
+.PHONY: help install up down reset logs db migrate dev build lint typecheck test test-int test-go lint-go format
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -9,7 +9,8 @@ install: ## Install JS dependencies
 
 up: ## Build and start the full stack
 	docker compose up --build -d
-	@echo "lending-api → http://localhost:3000  (docs: /docs)"
+	@echo "lending-api  → http://localhost:3000  (docs: /docs)"
+	@echo "card-gateway → http://localhost:8081"
 
 down: ## Stop the stack
 	docker compose down
@@ -45,6 +46,15 @@ test: ## Run unit tests
 
 test-int: ## Run integration tests against a throwaway Postgres (Testcontainers, needs Docker)
 	pnpm --filter lending-api test:int
+
+# Go runs in a container: no local toolchain needed.
+GO_RUN = docker run --rm -v $(CURDIR)/apps/card-gateway:/src -v acme-go-build-debian:/root/.cache/go-build -w /src golang:1.24
+
+test-go: ## Run the card gateway's Go tests (race detector on)
+	$(GO_RUN) go test -race -count=1 ./...
+
+lint-go: ## gofmt + go vet for the card gateway
+	$(GO_RUN) sh -c 'test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1); go vet ./...'
 
 format: ## Format the codebase
 	pnpm format

@@ -57,5 +57,22 @@ services:
       timeout: 3s
       retries: 20
 
+  # Card-network-facing edge. Holds no balances: it validates, rate limits, enforces deadlines
+  # and signs every call to the lending API.
+  card-gateway:
+    build:
+      context: apps/card-gateway
+    environment:
+      PORT: 8081
+      LENDING_API_URL: http://lending-api:3000
+      GATEWAY_SHARED_SECRET: local-dev-gateway-secret-change-me-0123456789
+      NETWORK_API_KEY: local-dev-network-key-change-me
+      AUTH_TIMEOUT_MS: 1500
+    ports:
+      - '8081:8081'
+    depends_on:
+      lending-api:
+        condition: service_healthy
+
 volumes:
   pgdata:

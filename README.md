@@ -22,12 +22,14 @@ make install   # pnpm install
 make dev       # Postgres in Docker, lending-api in watch mode
 make test      # unit tests
 make test-int  # integration + property tests against a throwaway Postgres (Testcontainers)
+make test-go   # Go gateway tests with the race detector (runs in Docker, no Go install needed)
 make lint typecheck
 ```
 
 ## Layout
 
-| Path               | What                                                                  |
-| ------------------ | --------------------------------------------------------------------- |
-| `apps/lending-api` | NestJS service — source of truth for collateral, cards and the ledger |
-| `db/migrations`    | SQL migrations (schema source of truth)                               |
+| Path                | What                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `apps/lending-api`  | NestJS service — source of truth for collateral, cards and the ledger                          |
+| `apps/card-gateway` | Go service — card-network edge: validation, rate limits, circuit breaker, fail-closed timeouts |
+| `db/migrations`     | SQL migrations (schema source of truth)                                                        |
