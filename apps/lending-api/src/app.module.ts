@@ -5,6 +5,8 @@ import { ConfigModule } from './config/config.module';
 import { ENV, Env } from './config/env';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { IdempotencyModule } from './idempotency/idempotency.module';
+import { LedgerModule } from './ledger/ledger.module';
 
 export const REQUEST_ID_HEADER = 'x-request-id';
 
@@ -43,6 +45,8 @@ export const REQUEST_ID_HEADER = 'x-request-id';
       }),
     }),
     DatabaseModule,
+    LedgerModule,
+    IdempotencyModule,
     HealthModule,
   ],
 })

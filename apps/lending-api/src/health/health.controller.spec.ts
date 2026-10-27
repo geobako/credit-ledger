@@ -5,12 +5,7 @@ import { HealthController } from './health.controller';
 
 function dbStub(fails: boolean) {
   return {
-    getExecutor: () => ({
-      transformQuery: (node: unknown) => node,
-      compileQuery: () => ({ sql: 'select 1', parameters: [] }),
-      executeQuery: () =>
-        fails ? Promise.reject(new Error('down')) : Promise.resolve({ rows: [] }),
-    }),
+    execute: () => (fails ? Promise.reject(new Error('down')) : Promise.resolve({ rows: [] })),
   };
 }
 

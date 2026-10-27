@@ -9,7 +9,7 @@ Service that owns Acme Credit's secured credit card lifecycle: collateral deposi
 Requirements: Docker, Node 24 + pnpm 10.
 
 ```bash
-make up        # builds and starts Postgres + lending-api
+make up        # builds and starts Postgres, runs migrations, starts lending-api
 ```
 
 - API health: http://localhost:3000/health · readiness: http://localhost:3000/ready
@@ -21,6 +21,7 @@ make up        # builds and starts Postgres + lending-api
 make install   # pnpm install
 make dev       # Postgres in Docker, lending-api in watch mode
 make test      # unit tests
+make test-int  # integration + property tests against a throwaway Postgres (Testcontainers)
 make lint typecheck
 ```
 

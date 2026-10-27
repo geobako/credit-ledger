@@ -1,38 +1,38 @@
 import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool, types } from 'pg';
+import { Pool } from 'pg';
 import { ENV, Env } from '../config/env';
-import { Database } from './schema';
+import { createDatabase, Database } from './database';
+import { TransactionManager } from './transaction-manager';
 
 export const DB = Symbol('DB');
-
-// Return BIGINT (int8) columns as strings so money never passes through a JS number.
-types.setTypeParser(types.builtins.INT8, (value) => value);
+const POOL = Symbol('POOL');
 
 @Global()
 @Module({
   providers: [
     {
-      provide: DB,
+      provide: POOL,
       inject: [ENV],
       useFactory: (env: Env) =>
-        new Kysely<Database>({
-          dialect: new PostgresDialect({
-            pool: new Pool({
-              connectionString: env.DATABASE_URL,
-              max: env.DATABASE_POOL_MAX,
-              application_name: 'lending-api',
-            }),
-          }),
+        new Pool({
+          connectionString: env.DATABASE_URL,
+          max: env.DATABASE_POOL_MAX,
+          application_name: 'lending-api',
         }),
     },
+    { provide: DB, inject: [POOL], useFactory: (pool: Pool) => createDatabase(pool) },
+    {
+      provide: TransactionManager,
+      inject: [DB],
+      useFactory: (db: Database) => new TransactionManager(db),
+    },
   ],
-  exports: [DB],
+  exports: [DB, TransactionManager],
 })
 export class DatabaseModule implements OnApplicationShutdown {
-  constructor(@Inject(DB) private readonly db: Kysely<Database>) {}
+  constructor(@Inject(POOL) private readonly pool: Pool) {}
 
   async onApplicationShutdown() {
-    await this.db.destroy();
+    await this.pool.end();
   }
 }

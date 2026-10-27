@@ -17,6 +17,19 @@ services:
       timeout: 3s
       retries: 30
 
+  # One-off migration job (mirrors a pre-deploy task in the cloud). The API never migrates on boot.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/lending-api/Dockerfile
+    command: ['node', 'dist/database/migrate.js']
+    environment:
+      DATABASE_URL: postgres://acme:acme@postgres:5432/acme_credit
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
   lending-api:
     build:
       context: .
@@ -29,8 +42,8 @@ services:
     ports:
       - '3000:3000'
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
       interval: 5s

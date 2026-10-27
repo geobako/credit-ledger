@@ -18,6 +18,8 @@ WORKDIR /app
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /out/package.json ./package.json
 COPY --from=build /repo/apps/lending-api/dist ./dist
+COPY db/migrations ./db/migrations
+ENV MIGRATIONS_DIR=/app/db/migrations
 USER node
 EXPOSE 3000
 CMD ["node", "dist/main.js"]
