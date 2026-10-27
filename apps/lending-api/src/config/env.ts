@@ -27,6 +27,17 @@ const envSchema = z
     WEBHOOK_SECRET: z.string().min(32),
     WEBHOOK_TOLERANCE_SECONDS: z.coerce.number().int().positive().default(300),
 
+    /** Shared secret for HMAC-signed calls from the card gateway. */
+    GATEWAY_SHARED_SECRET: z.string().min(32),
+    /** How long an uncaptured authorization holds credit before it expires. */
+    AUTH_HOLD_TTL_MINUTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(7 * 24 * 60),
+    /** Interval of the hold-expiry sweep; 0 disables it (tests drive it directly). */
+    AUTH_EXPIRY_SWEEP_SECONDS: z.coerce.number().int().min(0).default(60),
+
     /** Credit limit as a share of confirmed collateral (10_000 bps = 100%). */
     ADVANCE_RATE_BPS: z.coerce.number().int().min(0).max(10_000).default(10_000),
     MIN_DEPOSIT_MINOR: z.coerce.bigint().positive().default(5_000n),

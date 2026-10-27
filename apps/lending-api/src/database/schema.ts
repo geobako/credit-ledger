@@ -257,6 +257,62 @@ export const collateralDeposits = pgTable(
   ],
 );
 
+// ── Purchase authorizations ─────────────────────────────────────────────────
+
+export const authorizationStatus = pgEnum('authorization_status', [
+  'HELD', // approved, amount reserved against the limit
+  'CAPTURED', // settled by the network: now owed by the customer
+  'REVERSED', // cancelled by the merchant/network: hold released
+  'EXPIRED', // never captured in time: hold released
+  'DECLINED', // refused; kept for the customer's history and audit
+]);
+
+export const authorizations = pgTable(
+  'authorizations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creditAccountId: uuid('credit_account_id')
+      .notNull()
+      .references(() => creditAccounts.id),
+    cardId: uuid('card_id')
+      .notNull()
+      .references(() => cards.id),
+    /** Card network's id for this authorization: the natural idempotency key. */
+    networkTransactionId: text('network_transaction_id').notNull().unique(),
+    amount: bigint('amount', { mode: 'bigint' }).notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    status: authorizationStatus('status').notNull(),
+    declineReason: text('decline_reason'),
+    merchantName: text('merchant_name').notNull(),
+    merchantCategoryCode: char('merchant_category_code', { length: 4 }),
+    capturedAmount: bigint('captured_amount', { mode: 'bigint' }),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('authorizations_amount_positive', sql`${t.amount} > 0`),
+    check(
+      'authorizations_capture_within_hold',
+      sql`${t.capturedAmount} IS NULL OR (${t.capturedAmount} > 0 AND ${t.capturedAmount} <= ${t.amount})`,
+    ),
+    check(
+      'authorizations_captured_consistent',
+      sql`(${t.status} = 'CAPTURED') = (${t.capturedAmount} IS NOT NULL AND ${t.journalEntryId} IS NOT NULL)`,
+    ),
+    check(
+      'authorizations_declined_has_reason',
+      sql`(${t.status} = 'DECLINED') = (${t.declineReason} IS NOT NULL)`,
+    ),
+    index('authorizations_credit_account_id_idx').on(t.creditAccountId, t.createdAt),
+    // Expiry sweep: only open holds are scanned.
+    index('authorizations_held_expiry_idx')
+      .on(t.expiresAt)
+      .where(sql`${t.status} = 'HELD'`),
+  ],
+);
+
 // ── Inbound webhooks ────────────────────────────────────────────────────────
 
 export const webhookEvents = pgTable('webhook_events', {
@@ -276,3 +332,4 @@ export type User = typeof users.$inferSelect;
 export type CreditAccount = typeof creditAccounts.$inferSelect;
 export type Card = typeof cards.$inferSelect;
 export type CollateralDeposit = typeof collateralDeposits.$inferSelect;
+export type Authorization = typeof authorizations.$inferSelect;

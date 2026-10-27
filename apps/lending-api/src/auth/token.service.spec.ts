@@ -4,7 +4,11 @@ import { UnauthenticatedError } from './auth.errors';
 import { TokenService } from './token.service';
 
 describe('TokenService', () => {
-  const env = loadEnv({ DATABASE_URL: 'postgres://u:p@h/db', WEBHOOK_SECRET: 'x'.repeat(32) });
+  const env = loadEnv({
+    DATABASE_URL: 'postgres://u:p@h/db',
+    WEBHOOK_SECRET: 'x'.repeat(32),
+    GATEWAY_SHARED_SECRET: 'g'.repeat(32),
+  });
   const tokens = new TokenService(env);
   const principal = { userId: 'u1', email: 'a@acme.test', role: 'customer' as const };
 
@@ -31,7 +35,11 @@ describe('TokenService', () => {
 
   it('rejects tokens from another issuer key', () => {
     const other = new TokenService(
-      loadEnv({ DATABASE_URL: 'postgres://u:p@h/db', WEBHOOK_SECRET: 'x'.repeat(32) }),
+      loadEnv({
+        DATABASE_URL: 'postgres://u:p@h/db',
+        WEBHOOK_SECRET: 'x'.repeat(32),
+        GATEWAY_SHARED_SECRET: 'g'.repeat(32),
+      }),
     );
     expect(() => tokens.verify(other.issue(principal).accessToken)).toThrow(UnauthenticatedError);
   });

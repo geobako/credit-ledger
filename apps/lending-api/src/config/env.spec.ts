@@ -4,6 +4,7 @@ describe('loadEnv', () => {
   const valid = {
     DATABASE_URL: 'postgres://u:p@localhost:5432/db',
     WEBHOOK_SECRET: 'x'.repeat(32),
+    GATEWAY_SHARED_SECRET: 'g'.repeat(32),
   };
 
   it('applies defaults', () => {
@@ -40,7 +41,7 @@ describe('loadEnv', () => {
   });
 
   it('rejects a missing or non-postgres database url', () => {
-    expect(() => loadEnv({ WEBHOOK_SECRET: valid.WEBHOOK_SECRET })).toThrow(/DATABASE_URL/);
+    expect(() => loadEnv({ ...valid, DATABASE_URL: undefined })).toThrow(/DATABASE_URL/);
     expect(() => loadEnv({ ...valid, DATABASE_URL: 'mysql://localhost/db' })).toThrow(
       /DATABASE_URL/,
     );

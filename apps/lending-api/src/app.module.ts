@@ -4,6 +4,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
+import { AuthorizationsModule } from './authorizations/authorizations.module';
+import { CardsModule } from './cards/cards.module';
 import { CollateralModule } from './collateral/collateral.module';
 import { ConfigModule } from './config/config.module';
 import { CreditAccountsModule } from './credit-accounts/credit-accounts.module';
@@ -62,6 +64,8 @@ export const REQUEST_ID_HEADER = 'x-request-id';
     HealthModule,
     CreditAccountsModule,
     CollateralModule,
+    CardsModule,
+    AuthorizationsModule,
     WebhooksModule,
     SandboxModule,
   ],

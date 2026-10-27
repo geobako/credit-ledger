@@ -43,6 +43,7 @@ services:
       DATABASE_URL: postgres://acme:acme@postgres:5432/acme_credit
       # Local-only values. In the cloud these come from Secrets Manager (see infra/).
       WEBHOOK_SECRET: local-dev-webhook-secret-change-me-0123456789
+      GATEWAY_SHARED_SECRET: local-dev-gateway-secret-change-me-0123456789
       SANDBOX_ENABLED: 'true'
       WEB_ORIGINS: http://localhost:5173,http://localhost:8080
     ports:
