@@ -395,6 +395,69 @@ export const accountClosures = pgTable(
   ],
 );
 
+// ── Audit log ───────────────────────────────────────────────────────────────
+//
+// Every state change is recorded here in the same transaction as the change itself.
+// Rows are append-only; a background sealer links them into a SHA-256 hash chain
+// (chain_position / prev_hash / hash), which makes any later tampering detectable.
+
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    seq: bigint('seq', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true, precision: 3 }).notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    action: text('action').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    /** Credit account the event belongs to, for per-account timelines. */
+    creditAccountId: uuid('credit_account_id'),
+    requestId: text('request_id'),
+    /** Business facts only. No PII: this table can never be edited or erased. */
+    data: jsonb('data').$type<Record<string, unknown>>().notNull(),
+    chainPosition: bigint('chain_position', { mode: 'bigint' }).unique(),
+    prevHash: char('prev_hash', { length: 64 }),
+    hash: char('hash', { length: 64 }).unique(),
+  },
+  (t) => [
+    index('audit_log_credit_account_idx').on(t.creditAccountId, t.seq),
+    index('audit_log_entity_idx').on(t.entityType, t.entityId),
+    index('audit_log_unsealed_idx')
+      .on(t.seq)
+      .where(sql`${t.hash} IS NULL`),
+    check(
+      'audit_log_seal_complete',
+      sql`(${t.hash} IS NULL) = (${t.chainPosition} IS NULL) AND (${t.hash} IS NULL) = (${t.prevHash} IS NULL)`,
+    ),
+  ],
+);
+
+// ── Transactional outbox ────────────────────────────────────────────────────
+
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    /** Also the consumer-side deduplication key (delivery is at-least-once). */
+    id: uuid('id').primaryKey().defaultRandom(),
+    seq: bigint('seq', { mode: 'bigint' }).notNull().generatedAlwaysAsIdentity(),
+    eventType: text('event_type').notNull(),
+    aggregateType: text('aggregate_type').notNull(),
+    aggregateId: text('aggregate_id').notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+  },
+  (t) => [
+    index('outbox_events_pending_idx')
+      .on(t.availableAt, t.seq)
+      .where(sql`${t.publishedAt} IS NULL`),
+  ],
+);
+
 // ── Inbound webhooks ────────────────────────────────────────────────────────
 
 export const webhookEvents = pgTable('webhook_events', {
@@ -417,3 +480,5 @@ export type CollateralDeposit = typeof collateralDeposits.$inferSelect;
 export type Authorization = typeof authorizations.$inferSelect;
 export type Repayment = typeof repayments.$inferSelect;
 export type AccountClosure = typeof accountClosures.$inferSelect;
+export type AuditEntry = typeof auditLog.$inferSelect;
+export type OutboxEvent = typeof outboxEvents.$inferSelect;

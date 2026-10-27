@@ -9,6 +9,7 @@ import type { Database, Transaction } from '../database/database';
 import { DB } from '../database/database.module';
 import { creditAccounts, Repayment, repayments } from '../database/schema';
 import { TransactionManager } from '../database/transaction-manager';
+import { DomainEvents } from '../events/domain-events';
 import { IdempotencyService, IdempotentRequest } from '../idempotency/idempotency.service';
 import { PostingInput } from '../ledger/journal-entry';
 import { LedgerService } from '../ledger/ledger.service';
@@ -42,6 +43,7 @@ export class RepaymentsService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly accounts: CreditAccountsService,
+    private readonly events: DomainEvents,
   ) {}
 
   create(principal: Principal, accountId: string, amount: Money, idem: IdempotentRequest) {
@@ -70,6 +72,13 @@ export class RepaymentsService {
             providerReference: `rpy_${randomUUID().replace(/-/g, '')}`,
           })
           .returning();
+        await this.events.emit(tx, {
+          type: 'RepaymentRequested',
+          entityType: 'repayment',
+          entityId: repayment!.id,
+          creditAccountId: account.id,
+          data: { repaymentId: repayment!.id, amount: amount.toJSON() },
+        });
         return {
           status: 201,
           body: {
@@ -124,11 +133,19 @@ export class RepaymentsService {
       .for('update');
     if (!repayment || repayment.status !== 'PENDING') return 'ALREADY_SETTLED';
 
-    const reject = (status: 'FAILED' | 'REJECTED', reason: string) =>
-      tx
+    const reject = async (status: 'FAILED' | 'REJECTED', reason: string) => {
+      await tx
         .update(repayments)
         .set({ status, failureReason: reason, settledAt: new Date() })
         .where(eq(repayments.id, repayment.id));
+      await this.events.emit(tx, {
+        type: status === 'FAILED' ? 'RepaymentFailed' : 'RepaymentRejected',
+        entityType: 'repayment',
+        entityId: repayment.id,
+        creditAccountId: account.id,
+        data: { repaymentId: repayment.id, reason, amountReceived: settlement.amount.toJSON() },
+      });
+    };
 
     if (settlement.outcome === 'failed') {
       await reject('FAILED', settlement.failureReason ?? 'PAYMENT_FAILED');
@@ -192,6 +209,19 @@ export class RepaymentsService {
         settledAt: new Date(),
       })
       .where(eq(repayments.id, repayment.id));
+    await this.events.emit(tx, {
+      type: 'RepaymentSettled',
+      entityType: 'repayment',
+      entityId: repayment.id,
+      creditAccountId: account.id,
+      data: {
+        repaymentId: repayment.id,
+        amount: amount.toJSON(),
+        applied: applied.toJSON(),
+        excess: excess.toJSON(),
+        journalEntryId: entry.id,
+      },
+    });
     return 'SETTLED';
   }
 }

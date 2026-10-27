@@ -8,10 +8,12 @@ import type { Database, Transaction } from '../database/database';
 import { DB } from '../database/database.module';
 import { Authorization, authorizations, cards, creditAccounts } from '../database/schema';
 import { TransactionManager } from '../database/transaction-manager';
+import { DomainEvents } from '../events/domain-events';
 import { IdempotencyService } from '../idempotency/idempotency.service';
 import { hashRequest } from '../idempotency/request-hash';
 import { transfer } from '../ledger/journal-entry';
 import { LedgerService } from '../ledger/ledger.service';
+import { Metrics } from '../metrics/metrics';
 import {
   AuthorizationNotFoundError,
   AuthorizationNotOpenError,
@@ -54,6 +56,8 @@ export class AuthorizationsService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly accounts: CreditAccountsService,
+    private readonly events: DomainEvents,
+    private readonly metrics: Metrics,
   ) {}
 
   /**
@@ -72,6 +76,7 @@ export class AuthorizationsService {
         merchantCategoryCode: request.merchantCategoryCode ?? null,
       },
     });
+    const stopTimer = this.metrics.authorizationLatency.startTimer();
     const result = await this.tx.run((tx) =>
       this.idempotency.execute(
         tx,
@@ -79,6 +84,13 @@ export class AuthorizationsService {
         async () => ({ status: 200, body: await this.decide(tx, request) }),
       ),
     );
+    stopTimer();
+    if (!result.replayed) {
+      this.metrics.authorizationDecisions.inc({
+        outcome: result.body.approved ? 'approved' : 'declined',
+        reason: result.body.declineReason ?? 'none',
+      });
+    }
     return { ...result.body, replayed: result.replayed };
   }
 
@@ -131,6 +143,21 @@ export class AuthorizationsService {
         .set({ heldAmount: sql`${creditAccounts.heldAmount} + ${big(request.amount.minor)}` })
         .where(eq(creditAccounts.id, account.id));
     }
+    await this.events.emit(tx, {
+      type: reason ? 'AuthorizationDeclined' : 'AuthorizationApproved',
+      entityType: 'authorization',
+      entityId: auth!.id,
+      creditAccountId: account.id,
+      data: {
+        authorizationId: auth!.id,
+        cardId: card!.id,
+        networkTransactionId: request.networkTransactionId,
+        amount: request.amount.toJSON(),
+        merchantName: request.merchantName,
+        merchantCategoryCode: request.merchantCategoryCode ?? null,
+        declineReason: reason,
+      },
+    });
     return decision(auth!.id, reason);
   }
 
@@ -197,6 +224,18 @@ export class AuthorizationsService {
         })
         .where(eq(authorizations.id, auth.id))
         .returning();
+      await this.events.emit(tx, {
+        type: 'AuthorizationCaptured',
+        entityType: 'authorization',
+        entityId: auth.id,
+        creditAccountId: account.id,
+        data: {
+          authorizationId: auth.id,
+          authorized: Money.of(auth.amount, captureAmount.currency).toJSON(),
+          captured: captureAmount.toJSON(),
+          journalEntryId: entry.id,
+        },
+      });
       return present(captured!);
     });
   }
@@ -263,6 +302,16 @@ export class AuthorizationsService {
       .set({ status, resolvedAt: new Date() })
       .where(eq(authorizations.id, auth.id))
       .returning();
+    await this.events.emit(tx, {
+      type: status === 'REVERSED' ? 'AuthorizationReversed' : 'AuthorizationExpired',
+      entityType: 'authorization',
+      entityId: auth.id,
+      creditAccountId: account.id,
+      data: {
+        authorizationId: auth.id,
+        released: Money.of(auth.amount, auth.currency as Currency).toJSON(),
+      },
+    });
     return present(released!);
   }
 

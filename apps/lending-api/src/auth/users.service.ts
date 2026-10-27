@@ -5,19 +5,32 @@ import type { Database } from '../database/database';
 import { DB } from '../database/database.module';
 import { isPgError, PgErrorCode } from '../database/pg-errors';
 import { User, users } from '../database/schema';
+import { DomainEvents } from '../events/domain-events';
 import { EmailTakenError } from './auth.errors';
 
 @Injectable()
 export class UsersService {
-  constructor(@Inject(DB) private readonly db: Database) {}
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    private readonly events: DomainEvents,
+  ) {}
 
   async registerCustomer(email: string, name: string): Promise<User> {
     try {
-      const [user] = await this.db
-        .insert(users)
-        .values({ email: email.toLowerCase(), name, role: 'customer' })
-        .returning();
-      return user!;
+      return await this.db.transaction(async (tx) => {
+        const [user] = await tx
+          .insert(users)
+          .values({ email: email.toLowerCase(), name, role: 'customer' })
+          .returning();
+        // No email or name: the audit trail is immutable and must not hold personal data.
+        await this.events.emit(tx, {
+          type: 'CustomerRegistered',
+          entityType: 'user',
+          entityId: user!.id,
+          data: { userId: user!.id, role: user!.role },
+        });
+        return user!;
+      });
     } catch (error) {
       if (isPgError(error, PgErrorCode.UniqueViolation)) {
         throw new EmailTakenError('an account with this email already exists');

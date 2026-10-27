@@ -36,6 +36,20 @@
       "when": 1793118716328,
       "tag": "0004_repayments_and_closures",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793119641480,
+      "tag": "0005_audit_and_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793119642777,
+      "tag": "0006_audit_immutability",
+      "breakpoints": true
     }
   ]
 }

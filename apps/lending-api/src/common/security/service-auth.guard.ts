@@ -11,6 +11,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Public } from '../../auth/decorators';
 import { ENV, Env } from '../../config/env';
+import { RequestContext } from '../context/request-context';
 import { DomainError } from '../errors/domain-error';
 import {
   checkRequestSignature,
@@ -47,6 +48,7 @@ export class ServiceAuthGuard implements CanActivate {
     if (result !== 'ok') {
       throw new InvalidServiceSignatureError(`service signature check failed: ${result}`);
     }
+    RequestContext.setActor({ type: 'service', id: service });
     return true;
   }
 }

@@ -8,18 +8,20 @@ import { AuthorizationsModule } from './authorizations/authorizations.module';
 import { CardsModule } from './cards/cards.module';
 import { ClosureModule } from './closure/closure.module';
 import { CollateralModule } from './collateral/collateral.module';
+import { REQUEST_ID_HEADER } from './common/context/request-context';
 import { ConfigModule } from './config/config.module';
 import { CreditAccountsModule } from './credit-accounts/credit-accounts.module';
 import { ENV, Env } from './config/env';
 import { DatabaseModule } from './database/database.module';
+import { EventsModule } from './events/events.module';
 import { HealthModule } from './health/health.module';
 import { IdempotencyModule } from './idempotency/idempotency.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { MetricsModule } from './metrics/metrics.module';
+import { OpsModule } from './ops/ops.module';
 import { RepaymentsModule } from './repayments/repayments.module';
 import { SandboxModule } from './sandbox/sandbox.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
-
-export const REQUEST_ID_HEADER = 'x-request-id';
 
 @Module({
   imports: [
@@ -47,7 +49,9 @@ export const REQUEST_ID_HEADER = 'x-request-id';
             ],
             censor: '[REDACTED]',
           },
-          autoLogging: { ignore: (req) => req.url === '/health' || req.url === '/ready' },
+          autoLogging: {
+            ignore: (req) => ['/health', '/ready', '/metrics'].includes(req.url ?? ''),
+          },
           transport:
             env.LOG_FORMAT === 'pretty'
               ? { target: 'pino-pretty', options: { singleLine: true } }
@@ -59,7 +63,9 @@ export const REQUEST_ID_HEADER = 'x-request-id';
       inject: [ENV],
       useFactory: (env: Env) => [{ ttl: 60_000, limit: env.RATE_LIMIT_PER_MINUTE }],
     }),
+    MetricsModule,
     DatabaseModule,
+    EventsModule,
     LedgerModule,
     IdempotencyModule,
     AuthModule,
@@ -71,6 +77,7 @@ export const REQUEST_ID_HEADER = 'x-request-id';
     RepaymentsModule,
     ClosureModule,
     WebhooksModule,
+    OpsModule,
     SandboxModule,
   ],
   // Global guards: rate limiting here, authentication in AuthModule (deny by default).

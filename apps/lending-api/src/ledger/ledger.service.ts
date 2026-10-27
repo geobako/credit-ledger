@@ -111,6 +111,58 @@ export class LedgerService {
     return Money.of(account.balance, account.currency as Currency);
   }
 
+  /** Journal entries (newest first) with their postings, optionally for one owner's accounts. */
+  async listEntries(db: Executor, filter: { ownerId?: string; limit: number }) {
+    const entries = await db.execute<{
+      id: string;
+      entry_type: string;
+      reference: string | null;
+      description: string;
+      created_at: string;
+    }>(sql`
+      SELECT je.id, je.entry_type, je.reference, je.description, je.created_at
+        FROM journal_entries je
+       WHERE ${filter.ownerId ?? null}::uuid IS NULL OR EXISTS (
+               SELECT 1 FROM postings p JOIN ledger_accounts a ON a.id = p.account_id
+                WHERE p.journal_entry_id = je.id AND a.owner_id = ${filter.ownerId ?? null}::uuid)
+       ORDER BY je.created_at DESC, je.id
+       LIMIT ${filter.limit}`);
+    const ids = entries.rows.map((e) => e.id);
+    if (ids.length === 0) return [];
+    const legs = await db.execute<{
+      journal_entry_id: string;
+      account_id: string;
+      kind: string;
+      owner_id: string | null;
+      direction: 'DEBIT' | 'CREDIT';
+      amount: string;
+      currency: string;
+    }>(sql`
+      SELECT p.journal_entry_id, p.account_id, a.kind, a.owner_id, p.direction, p.amount::text, p.currency
+        FROM postings p JOIN ledger_accounts a ON a.id = p.account_id
+       WHERE p.journal_entry_id IN (${sql.join(
+         ids.map((id) => sql`${id}::uuid`),
+         sql`, `,
+       )})
+       ORDER BY p.id`);
+    return entries.rows.map((e) => ({
+      id: e.id,
+      type: e.entry_type,
+      reference: e.reference,
+      description: e.description,
+      createdAt: e.created_at,
+      postings: legs.rows
+        .filter((l) => l.journal_entry_id === e.id)
+        .map((l) => ({
+          accountId: l.account_id,
+          accountKind: l.kind,
+          ownerId: l.owner_id,
+          direction: l.direction,
+          amount: { amount: l.amount, currency: l.currency },
+        })),
+    }));
+  }
+
   /** Sum of debit-normal balances must equal sum of credit-normal balances. */
   async trialBalance(db: Executor) {
     const result = await db.execute<{ debit_normal: string; credit_normal: string }>(sql`

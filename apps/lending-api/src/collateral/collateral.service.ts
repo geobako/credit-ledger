@@ -10,6 +10,7 @@ import { cards, CollateralDeposit, collateralDeposits, creditAccounts } from '..
 import { TransactionManager } from '../database/transaction-manager';
 import { CreditAccountClosedError } from '../credit-accounts/credit-accounts.errors';
 import { CreditAccountsService } from '../credit-accounts/credit-accounts.service';
+import { DomainEvents } from '../events/domain-events';
 import { IdempotencyService, IdempotentRequest } from '../idempotency/idempotency.service';
 import { transfer } from '../ledger/journal-entry';
 import { LedgerService } from '../ledger/ledger.service';
@@ -43,6 +44,7 @@ export class CollateralService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly accounts: CreditAccountsService,
+    private readonly events: DomainEvents,
   ) {}
 
   /**
@@ -73,6 +75,13 @@ export class CollateralService {
             providerReference: `pay_${randomUUID().replace(/-/g, '')}`,
           })
           .returning();
+        await this.events.emit(tx, {
+          type: 'CollateralDepositRequested',
+          entityType: 'collateral_deposit',
+          entityId: deposit!.id,
+          creditAccountId: account.id,
+          data: { depositId: deposit!.id, amount: amount.toJSON() },
+        });
         return {
           status: 201,
           body: {
@@ -133,6 +142,13 @@ export class CollateralService {
         .update(collateralDeposits)
         .set({ status, failureReason: reason, settledAt: new Date() })
         .where(eq(collateralDeposits.id, deposit.id));
+      await this.events.emit(tx, {
+        type: status === 'FAILED' ? 'CollateralDepositFailed' : 'CollateralDepositRejected',
+        entityType: 'collateral_deposit',
+        entityId: deposit.id,
+        creditAccountId: account.id,
+        data: { depositId: deposit.id, reason, amountReceived: settlement.amount.toJSON() },
+      });
     };
 
     if (settlement.outcome === 'failed') {
@@ -190,6 +206,39 @@ export class CollateralService {
       .update(collateralDeposits)
       .set({ status: 'CONFIRMED', journalEntryId: entry.id, settledAt: now })
       .where(eq(collateralDeposits.id, deposit.id));
+
+    await this.events.emit(tx, {
+      type: 'CollateralDepositConfirmed',
+      entityType: 'collateral_deposit',
+      entityId: deposit.id,
+      creditAccountId: account.id,
+      data: {
+        depositId: deposit.id,
+        amount: expected.toJSON(),
+        journalEntryId: entry.id,
+        collateral: collateral.toJSON(),
+      },
+    });
+    await this.events.emit(tx, {
+      type: 'CreditLimitChanged',
+      entityType: 'credit_account',
+      entityId: account.id,
+      creditAccountId: account.id,
+      data: {
+        previous: Money.of(account.creditLimit, expected.currency).toJSON(),
+        current: creditLimit.toJSON(),
+        advanceRateBps: account.advanceRateBps,
+      },
+    });
+    if (account.status === 'PENDING_COLLATERAL') {
+      await this.events.emit(tx, {
+        type: 'CreditAccountActivated',
+        entityType: 'credit_account',
+        entityId: account.id,
+        creditAccountId: account.id,
+        data: { creditLimit: creditLimit.toJSON() },
+      });
+    }
     return 'CONFIRMED';
   }
 }

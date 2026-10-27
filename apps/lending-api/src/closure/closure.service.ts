@@ -14,6 +14,7 @@ import {
   creditAccounts,
 } from '../database/schema';
 import { TransactionManager } from '../database/transaction-manager';
+import { DomainEvents } from '../events/domain-events';
 import { IdempotencyService, IdempotentRequest } from '../idempotency/idempotency.service';
 import { PostingInput, transfer } from '../ledger/journal-entry';
 import { LedgerService } from '../ledger/ledger.service';
@@ -41,6 +42,7 @@ export class ClosureService {
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
     private readonly accounts: CreditAccountsService,
+    private readonly events: DomainEvents,
   ) {}
 
   close(principal: Principal, accountId: string, reason: ClosureReason, idem: IdempotentRequest) {
@@ -189,6 +191,21 @@ export class ClosureService {
             currency,
           })
           .returning();
+        await this.events.emit(tx, {
+          type: 'CreditAccountClosed',
+          entityType: 'credit_account',
+          entityId: account.id,
+          creditAccountId: account.id,
+          data: {
+            reason,
+            refundApplied: plan.refundApplied.toJSON(),
+            collateralApplied: plan.collateralApplied.toJSON(),
+            writtenOff: plan.writtenOff.toJSON(),
+            collateralReleased: plan.collateralReleased.toJSON(),
+            refundReleased: plan.refundReleased.toJSON(),
+            payout: plan.payout.toJSON(),
+          },
+        });
         return { status: 200, body: present(closure!) };
       }),
     );

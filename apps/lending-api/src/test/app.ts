@@ -50,6 +50,10 @@ export async function createTestApp(): Promise<TestApp> {
     WEBHOOK_SECRET: TEST_WEBHOOK_SECRET,
     GATEWAY_SHARED_SECRET: TEST_GATEWAY_SECRET,
     AUTH_EXPIRY_SWEEP_SECONDS: '0',
+    // Background jobs are driven explicitly by the tests that need them.
+    AUDIT_SEAL_INTERVAL_MS: '0',
+    OUTBOX_RELAY_INTERVAL_MS: '0',
+    RECONCILIATION_INTERVAL_SECONDS: '0',
     SANDBOX_ENABLED: 'true',
     LOG_LEVEL: 'error',
     NODE_ENV: 'test',

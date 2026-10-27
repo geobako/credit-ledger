@@ -38,6 +38,11 @@ const envSchema = z
     /** Interval of the hold-expiry sweep; 0 disables it (tests drive it directly). */
     AUTH_EXPIRY_SWEEP_SECONDS: z.coerce.number().int().min(0).default(60),
 
+    /** Background job intervals; 0 disables a job (tests drive them directly). */
+    AUDIT_SEAL_INTERVAL_MS: z.coerce.number().int().min(0).default(1_000),
+    OUTBOX_RELAY_INTERVAL_MS: z.coerce.number().int().min(0).default(1_000),
+    RECONCILIATION_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(3_600),
+
     /** Credit limit as a share of confirmed collateral (10_000 bps = 100%). */
     ADVANCE_RATE_BPS: z.coerce.number().int().min(0).max(10_000).default(10_000),
     MIN_DEPOSIT_MINOR: z.coerce.bigint().positive().default(5_000n),

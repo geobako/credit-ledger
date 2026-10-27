@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { RequestContext } from '../common/context/request-context';
 import { ForbiddenError } from '../common/errors/domain-error';
 import { UnauthenticatedError } from './auth.errors';
 import { AuthenticatedRequest, IS_PUBLIC, ROLES } from './decorators';
@@ -24,6 +25,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthenticatedError('a bearer token is required');
     }
     req.principal = this.tokens.verify(token);
+    RequestContext.setActor({ type: 'user', id: req.principal.userId, role: req.principal.role });
 
     const roles = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES, targets);
     if (roles && !roles.includes(req.principal.role)) {

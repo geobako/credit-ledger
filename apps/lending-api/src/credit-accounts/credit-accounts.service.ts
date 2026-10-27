@@ -9,6 +9,7 @@ import { DB } from '../database/database.module';
 import { isPgError, PgErrorCode } from '../database/pg-errors';
 import { Card, cards, CreditAccount, creditAccounts, ledgerAccounts } from '../database/schema';
 import { TransactionManager } from '../database/transaction-manager';
+import { DomainEvents } from '../events/domain-events';
 import { IdempotencyService, IdempotentRequest } from '../idempotency/idempotency.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { issueVirtualCard } from './card-factory';
@@ -50,6 +51,7 @@ export class CreditAccountsService {
     private readonly tx: TransactionManager,
     private readonly ledger: LedgerService,
     private readonly idempotency: IdempotencyService,
+    private readonly events: DomainEvents,
   ) {}
 
   /** Opens a credit account with an inactive card; it activates once collateral is confirmed. */
@@ -73,9 +75,23 @@ export class CreditAccountsService {
           }
           throw error;
         }
-        await tx.insert(cards).values({ creditAccountId: account.id, ...issueVirtualCard() });
+        const [card] = await tx
+          .insert(cards)
+          .values({ creditAccountId: account.id, ...issueVirtualCard() })
+          .returning();
         await this.ledger.ensureAccount(tx, 'COLLATERAL_HELD', account.id);
         await this.ledger.ensureAccount(tx, 'CARD_RECEIVABLE', account.id);
+        await this.events.emit(tx, {
+          type: 'CreditAccountOpened',
+          entityType: 'credit_account',
+          entityId: account.id,
+          creditAccountId: account.id,
+          data: {
+            customerId: principal.userId,
+            cardId: card!.id,
+            advanceRateBps: account.advanceRateBps,
+          },
+        });
         return { status: 201, body: await this.view(tx, account) };
       }),
     );

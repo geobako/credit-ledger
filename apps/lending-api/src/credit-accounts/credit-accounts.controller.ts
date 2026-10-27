@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger
 import type { Response } from 'express';
 import { CurrentPrincipal } from '../auth/decorators';
 import { Principal } from '../auth/principal';
+import { AuditService, presentAudit } from '../events/audit.service';
 import { Idempotent, respond } from '../idempotency/idempotent.decorator';
 import type { IdempotentRequest } from '../idempotency/idempotency.service';
 import { CreditAccountsService } from './credit-accounts.service';
@@ -11,7 +12,10 @@ import { CreditAccountsService } from './credit-accounts.service';
 @ApiBearerAuth()
 @Controller('credit-accounts')
 export class CreditAccountsController {
-  constructor(private readonly accounts: CreditAccountsService) {}
+  constructor(
+    private readonly accounts: CreditAccountsService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -36,5 +40,18 @@ export class CreditAccountsController {
   @ApiOperation({ summary: 'Credit account with limit, balances, available credit and card' })
   get(@CurrentPrincipal() principal: Principal, @Param('id', ParseUUIDPipe) id: string) {
     return this.accounts.get(principal, id);
+  }
+
+  @Get(':id/activity')
+  @ApiOperation({
+    summary: 'Timeline of everything that happened on the account (from the audit trail)',
+  })
+  async activity(@CurrentPrincipal() principal: Principal, @Param('id', ParseUUIDPipe) id: string) {
+    const account = await this.accounts.get(principal, id); // access check
+    const entries = await this.audit.list({ creditAccountId: account.id }, 100);
+    return entries.map((entry) => {
+      const { seq, occurredAt, actor, action, entityType, entityId, data } = presentAudit(entry);
+      return { seq, occurredAt, actor: { type: actor.type }, action, entityType, entityId, data };
+    });
   }
 }

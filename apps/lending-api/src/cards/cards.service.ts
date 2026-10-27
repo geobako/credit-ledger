@@ -7,6 +7,7 @@ import type { Database } from '../database/database';
 import { DB } from '../database/database.module';
 import { Card, cards } from '../database/schema';
 import { TransactionManager } from '../database/transaction-manager';
+import { DomainEvents } from '../events/domain-events';
 
 export class CardNotFoundError extends DomainError {
   readonly code = 'CARD_NOT_FOUND';
@@ -29,6 +30,7 @@ export class CardsService {
     @Inject(DB) private readonly db: Database,
     private readonly tx: TransactionManager,
     private readonly accounts: CreditAccountsService,
+    private readonly events: DomainEvents,
   ) {}
 
   freeze(principal: Principal, cardId: string) {
@@ -72,6 +74,13 @@ export class CardsService {
         .set({ status: to })
         .where(eq(cards.id, cardId))
         .returning();
+      await this.events.emit(tx, {
+        type: to === 'FROZEN' ? 'CardFrozen' : 'CardUnfrozen',
+        entityType: 'card',
+        entityId: cardId,
+        creditAccountId: visible.creditAccountId,
+        data: { cardId, last4: updated!.last4 },
+      });
       return present(updated!);
     });
   }

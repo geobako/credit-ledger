@@ -1,6 +1,7 @@
 import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { Pool } from 'pg';
 import { ENV, Env } from '../config/env';
+import { Metrics } from '../metrics/metrics';
 import { createDatabase, Database } from './database';
 import { TransactionManager } from './transaction-manager';
 
@@ -23,8 +24,9 @@ const POOL = Symbol('POOL');
     { provide: DB, inject: [POOL], useFactory: (pool: Pool) => createDatabase(pool) },
     {
       provide: TransactionManager,
-      inject: [DB],
-      useFactory: (db: Database) => new TransactionManager(db),
+      inject: [DB, Metrics],
+      useFactory: (db: Database, metrics: Metrics) =>
+        new TransactionManager(db, (code) => metrics.transactionRetries.inc({ code })),
     },
   ],
   exports: [DB, TransactionManager],

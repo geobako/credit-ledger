@@ -11,6 +11,8 @@ import { CURRENCIES, Money } from '../common/money/money';
 import { ENV, Env } from '../config/env';
 import { webhookEvents } from '../database/schema';
 import { TransactionManager } from '../database/transaction-manager';
+import { AuditService } from '../events/audit.service';
+import { Metrics } from '../metrics/metrics';
 import { RepaymentOutcome, RepaymentsService } from '../repayments/repayments.service';
 import { verifyWebhookSignature } from './webhook-signature';
 
@@ -52,6 +54,8 @@ export class WebhooksService {
     private readonly tx: TransactionManager,
     private readonly collateral: CollateralService,
     private readonly repayments: RepaymentsService,
+    private readonly audit: AuditService,
+    private readonly metrics: Metrics,
   ) {}
 
   async handlePaymentEvent(
@@ -73,7 +77,7 @@ export class WebhooksService {
       throw new InvalidWebhookPayloadError('webhook payload is not a valid payment event');
     }
 
-    return this.tx.run(async (tx) => {
+    const ack = await this.tx.run(async (tx): Promise<WebhookAck> => {
       const recorded = await tx
         .insert(webhookEvents)
         .values({ id: event.id, provider: SANDBOX_PROVIDER, type: event.type, payload: event })
@@ -108,9 +112,24 @@ export class WebhooksService {
       }
       if (outcome === 'UNKNOWN_REFERENCE') {
         this.logger.warn({ eventId: event.id }, 'payment event for an unknown reference');
+        // Money may have arrived that matches nothing: operations must be able to find it.
+        await this.audit.record(tx, {
+          action: 'PaymentUnmatched',
+          entityType: 'webhook_event',
+          entityId: event.id,
+          data: {
+            reference: event.data.reference,
+            amount: { amount: event.data.amount, currency: event.data.currency },
+          },
+        });
       }
       await tx.update(webhookEvents).set({ outcome }).where(eq(webhookEvents.id, event.id));
       return { received: true, duplicate: false, outcome };
     });
+    this.metrics.paymentWebhooks.inc({
+      outcome: ack.outcome ?? 'none',
+      duplicate: String(ack.duplicate),
+    });
+    return ack;
   }
 }
