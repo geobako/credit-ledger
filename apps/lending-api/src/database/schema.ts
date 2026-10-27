@@ -6,6 +6,7 @@ import {
   check,
   customType,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -14,6 +15,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -129,6 +131,148 @@ export const idempotencyKeys = pgTable(
   ],
 );
 
+// ── Identity ────────────────────────────────────────────────────────────────
+
+export const userRole = pgEnum('user_role', ['customer', 'ops']);
+
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: text('email').notNull().unique(),
+  name: text('name').notNull(),
+  role: userRole('role').notNull().default('customer'),
+  createdAt: createdAt(),
+});
+
+// ── Credit accounts & cards ─────────────────────────────────────────────────
+//
+// Lock hierarchy (always acquired in this order to rule out deadlocks):
+//   credit_accounts row  →  collateral_deposits / authorizations rows  →  ledger accounts (via postings)
+
+export const creditAccountStatus = pgEnum('credit_account_status', [
+  'PENDING_COLLATERAL',
+  'ACTIVE',
+  'CLOSED',
+]);
+
+export const creditAccounts = pgTable(
+  'credit_accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    customerId: uuid('customer_id')
+      .notNull()
+      .references(() => users.id),
+    status: creditAccountStatus('status').notNull().default('PENDING_COLLATERAL'),
+    currency: char('currency', { length: 3 }).notNull().default('USD'),
+    /** Share of confirmed collateral granted as credit, in basis points (10_000 = 100%). */
+    advanceRateBps: integer('advance_rate_bps').notNull(),
+    creditLimit: bigint('credit_limit', { mode: 'bigint' })
+      .notNull()
+      .default(sql`0`),
+    /** Mirror of the CARD_RECEIVABLE ledger balance, kept in the same transaction (reconciled). */
+    outstandingBalance: bigint('outstanding_balance', { mode: 'bigint' })
+      .notNull()
+      .default(sql`0`),
+    /** Sum of open authorization holds. */
+    heldAmount: bigint('held_amount', { mode: 'bigint' })
+      .notNull()
+      .default(sql`0`),
+    createdAt: createdAt(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  (t) => [
+    // At most one open credit account per customer.
+    uniqueIndex('credit_accounts_one_open_per_customer')
+      .on(t.customerId)
+      .where(sql`${t.status} <> 'CLOSED'`),
+    check('credit_accounts_advance_rate', sql`${t.advanceRateBps} BETWEEN 0 AND 10000`),
+    check(
+      'credit_accounts_amounts_non_negative',
+      sql`${t.creditLimit} >= 0 AND ${t.outstandingBalance} >= 0 AND ${t.heldAmount} >= 0`,
+    ),
+    // The core lending invariant, enforced by the database as the last line of defence:
+    // spending plus open holds can never exceed the limit.
+    check(
+      'credit_accounts_within_limit',
+      sql`${t.outstandingBalance} + ${t.heldAmount} <= ${t.creditLimit}`,
+    ),
+  ],
+);
+
+export const cardStatus = pgEnum('card_status', ['INACTIVE', 'ACTIVE', 'FROZEN', 'CLOSED']);
+
+export const cards = pgTable(
+  'cards',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creditAccountId: uuid('credit_account_id')
+      .notNull()
+      .references(() => creditAccounts.id),
+    status: cardStatus('status').notNull().default('INACTIVE'),
+    /** We never store a PAN: only the last four digits and the processor's opaque token. */
+    last4: char('last4', { length: 4 }).notNull(),
+    networkToken: text('network_token').notNull().unique(),
+    expiryMonth: smallint('expiry_month').notNull(),
+    expiryYear: smallint('expiry_year').notNull(),
+    createdAt: createdAt(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+  },
+  (t) => [index('cards_credit_account_id_idx').on(t.creditAccountId)],
+);
+
+// ── Collateral ──────────────────────────────────────────────────────────────
+
+export const depositStatus = pgEnum('deposit_status', [
+  'PENDING',
+  'CONFIRMED',
+  'FAILED',
+  /** Funds arrived but could not be accepted (e.g. account closed): refunded by operations. */
+  'REJECTED',
+]);
+
+export const collateralDeposits = pgTable(
+  'collateral_deposits',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creditAccountId: uuid('credit_account_id')
+      .notNull()
+      .references(() => creditAccounts.id),
+    amount: bigint('amount', { mode: 'bigint' }).notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    status: depositStatus('status').notNull().default('PENDING'),
+    /** Payment provider's reference for the incoming transfer. */
+    providerReference: text('provider_reference').notNull().unique(),
+    failureReason: text('failure_reason'),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    createdAt: createdAt(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('collateral_deposits_amount_positive', sql`${t.amount} > 0`),
+    check(
+      'collateral_deposits_confirmed_has_entry',
+      sql`(${t.status} = 'CONFIRMED') = (${t.journalEntryId} IS NOT NULL)`,
+    ),
+    index('collateral_deposits_credit_account_id_idx').on(t.creditAccountId),
+  ],
+);
+
+// ── Inbound webhooks ────────────────────────────────────────────────────────
+
+export const webhookEvents = pgTable('webhook_events', {
+  /** Provider's event id: a redelivered event is recognised and not processed twice. */
+  id: text('id').primaryKey(),
+  provider: text('provider').notNull(),
+  type: text('type').notNull(),
+  payload: jsonb('payload').notNull(),
+  outcome: text('outcome'),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type LedgerAccount = typeof ledgerAccounts.$inferSelect;
 export type JournalEntry = typeof journalEntries.$inferSelect;
 export type Posting = typeof postings.$inferSelect;
+export type User = typeof users.$inferSelect;
+export type CreditAccount = typeof creditAccounts.$inferSelect;
+export type Card = typeof cards.$inferSelect;
+export type CollateralDeposit = typeof collateralDeposits.$inferSelect;

@@ -25,8 +25,10 @@ db: ## Start only Postgres (for local dev / tests)
 
 migrate: db ## Apply database migrations to the local Postgres
 	DATABASE_URL=postgres://acme:acme@localhost:5433/acme_credit pnpm --filter lending-api db:migrate
+	DATABASE_URL=postgres://acme:acme@localhost:5433/acme_credit pnpm --filter lending-api db:seed
 
 dev: migrate ## Run lending-api locally in watch mode against dockerised Postgres
+	cp -n .env.example apps/lending-api/.env 2>/dev/null || true
 	pnpm --filter lending-api start:dev
 
 build: ## Build all packages

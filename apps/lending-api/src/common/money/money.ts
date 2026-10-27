@@ -8,10 +8,12 @@ const INTEGER = /^-?\d+$/;
 
 export class InvalidMoneyError extends DomainError {
   readonly code = 'INVALID_MONEY';
+  readonly kind = 'validation';
 }
 
 export class CurrencyMismatchError extends DomainError {
   readonly code = 'CURRENCY_MISMATCH';
+  readonly kind = 'validation';
 }
 
 export interface MoneyJson {

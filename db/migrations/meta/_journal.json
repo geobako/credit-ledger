@@ -15,6 +15,13 @@
       "when": 1793106350344,
       "tag": "0001_ledger_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793107755063,
+      "tag": "0002_accounts_cards_collateral",
+      "breakpoints": true
     }
   ]
 }
