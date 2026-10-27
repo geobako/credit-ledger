@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -58,8 +59,10 @@ export async function createTestApp(): Promise<TestApp> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication({ rawBody: true, bufferLogs: true });
   configureApp(app);
-  await app.init();
-  const http = request(app.getHttpServer() as Server);
+  // Listen once on an ephemeral port; supertest would otherwise re-bind per request.
+  await app.listen(0, '127.0.0.1');
+  const { port } = (app.getHttpServer() as Server).address() as AddressInfo;
+  const http = request(`http://127.0.0.1:${port}`);
 
   const db = app.get<Database>(DB);
   const deliverWebhook = (event: unknown, options: { signature?: string } = {}) => {

@@ -24,6 +24,8 @@ export interface CreditAccountView {
   currency: string;
   advanceRateBps: number;
   collateral: ReturnType<Money['toJSON']>;
+  /** Overpayments owed back to the customer (returned at closure). */
+  refundDue: ReturnType<Money['toJSON']>;
   creditLimit: ReturnType<Money['toJSON']>;
   outstandingBalance: ReturnType<Money['toJSON']>;
   heldAmount: ReturnType<Money['toJSON']>;
@@ -129,16 +131,12 @@ export class CreditAccountsService {
       .where(eq(cards.creditAccountId, account.id))
       .orderBy(desc(cards.createdAt))
       .limit(1);
-    const [collateralAccount] = await db
-      .select({ balance: ledgerAccounts.balance })
+    const balances = await db
+      .select({ kind: ledgerAccounts.kind, balance: ledgerAccounts.balance })
       .from(ledgerAccounts)
-      .where(
-        and(
-          eq(ledgerAccounts.kind, 'COLLATERAL_HELD'),
-          eq(ledgerAccounts.ownerId, account.id),
-          eq(ledgerAccounts.currency, currency),
-        ),
-      );
+      .where(and(eq(ledgerAccounts.ownerId, account.id), eq(ledgerAccounts.currency, currency)));
+    const ledgerBalance = (kind: string) =>
+      Money.of(balances.find((b) => b.kind === kind)?.balance ?? 0n, currency).toJSON();
 
     const limit = Money.of(account.creditLimit, currency);
     const outstanding = Money.of(account.outstandingBalance, currency);
@@ -149,7 +147,8 @@ export class CreditAccountsService {
       status: account.status,
       currency,
       advanceRateBps: account.advanceRateBps,
-      collateral: Money.of(collateralAccount?.balance ?? 0n, currency).toJSON(),
+      collateral: ledgerBalance('COLLATERAL_HELD'),
+      refundDue: ledgerBalance('REFUND_PAYABLE'),
       creditLimit: limit.toJSON(),
       outstandingBalance: outstanding.toJSON(),
       heldAmount: held.toJSON(),

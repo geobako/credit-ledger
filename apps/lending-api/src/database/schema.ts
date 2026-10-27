@@ -313,6 +313,88 @@ export const authorizations = pgTable(
   ],
 );
 
+// ── Repayments ──────────────────────────────────────────────────────────────
+
+export const repaymentStatus = pgEnum('repayment_status', [
+  'PENDING',
+  'SETTLED',
+  'FAILED',
+  /** Funds arrived but could not be applied (e.g. account closed): refunded by operations. */
+  'REJECTED',
+]);
+
+export const repayments = pgTable(
+  'repayments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creditAccountId: uuid('credit_account_id')
+      .notNull()
+      .references(() => creditAccounts.id),
+    amount: bigint('amount', { mode: 'bigint' }).notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    status: repaymentStatus('status').notNull().default('PENDING'),
+    providerReference: text('provider_reference').notNull().unique(),
+    /** Part of the payment that reduced the debt. */
+    appliedAmount: bigint('applied_amount', { mode: 'bigint' }),
+    /** Part that exceeded the debt at settlement: owed back to the customer. */
+    excessAmount: bigint('excess_amount', { mode: 'bigint' }),
+    failureReason: text('failure_reason'),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    createdAt: createdAt(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('repayments_amount_positive', sql`${t.amount} > 0`),
+    check(
+      'repayments_settled_consistent',
+      sql`(${t.status} = 'SETTLED') = (${t.journalEntryId} IS NOT NULL AND ${t.appliedAmount} IS NOT NULL AND ${t.excessAmount} IS NOT NULL)`,
+    ),
+    check(
+      'repayments_split_adds_up',
+      sql`${t.appliedAmount} IS NULL OR ${t.appliedAmount} + ${t.excessAmount} = ${t.amount}`,
+    ),
+    index('repayments_credit_account_id_idx').on(t.creditAccountId),
+  ],
+);
+
+// ── Account closure ─────────────────────────────────────────────────────────
+
+export const closureReason = pgEnum('closure_reason', ['CUSTOMER_REQUEST', 'CHARGE_OFF']);
+
+/** How the books were settled when an account closed. One per account. */
+export const accountClosures = pgTable(
+  'account_closures',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creditAccountId: uuid('credit_account_id')
+      .notNull()
+      .unique()
+      .references(() => creditAccounts.id),
+    reason: closureReason('reason').notNull(),
+    initiatedBy: uuid('initiated_by')
+      .notNull()
+      .references(() => users.id),
+    debtAtClosure: bigint('debt_at_closure', { mode: 'bigint' }).notNull(),
+    refundApplied: bigint('refund_applied', { mode: 'bigint' }).notNull(),
+    collateralApplied: bigint('collateral_applied', { mode: 'bigint' }).notNull(),
+    writtenOff: bigint('written_off', { mode: 'bigint' }).notNull(),
+    /** Returned to the customer: unused collateral plus any overpayment. Paid out by the provider. */
+    payoutAmount: bigint('payout_amount', { mode: 'bigint' }).notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'account_closures_debt_settled',
+      sql`${t.refundApplied} + ${t.collateralApplied} + ${t.writtenOff} = ${t.debtAtClosure}`,
+    ),
+    check(
+      'account_closures_non_negative',
+      sql`${t.debtAtClosure} >= 0 AND ${t.refundApplied} >= 0 AND ${t.collateralApplied} >= 0 AND ${t.writtenOff} >= 0 AND ${t.payoutAmount} >= 0`,
+    ),
+  ],
+);
+
 // ── Inbound webhooks ────────────────────────────────────────────────────────
 
 export const webhookEvents = pgTable('webhook_events', {
@@ -333,3 +415,5 @@ export type CreditAccount = typeof creditAccounts.$inferSelect;
 export type Card = typeof cards.$inferSelect;
 export type CollateralDeposit = typeof collateralDeposits.$inferSelect;
 export type Authorization = typeof authorizations.$inferSelect;
+export type Repayment = typeof repayments.$inferSelect;
+export type AccountClosure = typeof accountClosures.$inferSelect;

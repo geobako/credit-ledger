@@ -3,6 +3,7 @@ import { Body, Controller, HttpCode, Inject, Param, ParseUUIDPipe, Post } from '
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
 import { AuthorizationsService } from '../authorizations/authorizations.service';
+import { RepaymentsService } from '../repayments/repayments.service';
 import { CardsService } from '../cards/cards.service';
 import { Money } from '../common/money/money';
 import { CurrentPrincipal } from '../auth/decorators';
@@ -67,6 +68,7 @@ export class SandboxController {
     private readonly webhooks: WebhooksService,
     private readonly cards: CardsService,
     private readonly authorizations: AuthorizationsService,
+    private readonly repayments: RepaymentsService,
   ) {}
 
   private assertEnabled() {
@@ -123,24 +125,28 @@ export class SandboxController {
 
   @Post('payments/:reference/settle')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Simulate the payment provider settling a collateral transfer' })
+  @ApiOperation({
+    summary: 'Simulate the payment provider settling a collateral deposit or a repayment',
+  })
   async settle(
     @CurrentPrincipal() principal: Principal,
     @Param('reference') reference: string,
     @Body() dto: SettlePaymentDto,
   ) {
     this.assertEnabled();
-    const deposit = await this.collateral.findByReference(reference);
-    if (!deposit) throw new NotFoundError('unknown payment reference');
-    await this.accounts.findAccessible(this.db, principal, deposit.creditAccountId);
+    const payment =
+      (await this.collateral.findByReference(reference)) ??
+      (await this.repayments.findByReference(reference));
+    if (!payment) throw new NotFoundError('unknown payment reference');
+    await this.accounts.findAccessible(this.db, principal, payment.creditAccountId);
 
     const event = {
       id: `evt_${randomUUID().replace(/-/g, '')}`,
       type: dto.outcome === 'succeeded' ? 'payment.succeeded' : 'payment.failed',
       data: {
         reference,
-        amount: dto.amount ?? deposit.amount.toString(),
-        currency: deposit.currency,
+        amount: dto.amount ?? payment.amount.toString(),
+        currency: payment.currency,
         ...(dto.outcome === 'failed' ? { failure_reason: 'INSUFFICIENT_FUNDS_AT_SOURCE' } : {}),
       },
     };

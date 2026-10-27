@@ -11,6 +11,7 @@ import { CURRENCIES, Money } from '../common/money/money';
 import { ENV, Env } from '../config/env';
 import { webhookEvents } from '../database/schema';
 import { TransactionManager } from '../database/transaction-manager';
+import { RepaymentOutcome, RepaymentsService } from '../repayments/repayments.service';
 import { verifyWebhookSignature } from './webhook-signature';
 
 export class InvalidWebhookPayloadError extends DomainError {
@@ -34,7 +35,7 @@ export type PaymentEvent = z.infer<typeof paymentEventSchema>;
 export interface WebhookAck {
   received: true;
   duplicate: boolean;
-  outcome: SettlementOutcome | 'IGNORED' | null;
+  outcome: SettlementOutcome | RepaymentOutcome | 'IGNORED' | null;
 }
 
 /**
@@ -50,6 +51,7 @@ export class WebhooksService {
     @Inject(ENV) private readonly env: Env,
     private readonly tx: TransactionManager,
     private readonly collateral: CollateralService,
+    private readonly repayments: RepaymentsService,
   ) {}
 
   async handlePaymentEvent(
@@ -91,12 +93,16 @@ export class WebhooksService {
 
       let outcome: WebhookAck['outcome'];
       if (event.type === 'payment.succeeded' || event.type === 'payment.failed') {
-        outcome = await this.collateral.settle(tx, {
+        const settlement = {
           reference: event.data.reference,
-          outcome: event.type === 'payment.succeeded' ? 'succeeded' : 'failed',
+          outcome:
+            event.type === 'payment.succeeded' ? ('succeeded' as const) : ('failed' as const),
           amount: Money.of(event.data.amount, event.data.currency),
           failureReason: event.data.failure_reason,
-        });
+        };
+        // An incoming payment is either a collateral deposit or a repayment, told apart by reference.
+        outcome = await this.collateral.settle(tx, settlement);
+        if (outcome === 'UNKNOWN_REFERENCE') outcome = await this.repayments.settle(tx, settlement);
       } else {
         outcome = 'IGNORED';
       }

@@ -5,10 +5,11 @@
  * Typical flows (DR / CR):
  *   collateral confirmed   COLLATERAL_CASH   / COLLATERAL_HELD
  *   purchase captured      CARD_RECEIVABLE   / MERCHANT_PAYABLE
- *   repayment settled      OPERATING_CASH    / CARD_RECEIVABLE
+ *   repayment settled      OPERATING_CASH    / CARD_RECEIVABLE  (+ REFUND_PAYABLE for any overpayment)
  *   collateral released    COLLATERAL_HELD   / COLLATERAL_CASH
  *   collateral applied     COLLATERAL_HELD   / CARD_RECEIVABLE  (+ cash moves COLLATERAL_CASH → OPERATING_CASH)
  *   shortfall written off  CREDIT_LOSS       / CARD_RECEIVABLE
+ *   overpayment refunded   REFUND_PAYABLE    / OPERATING_CASH
  *   fee charged            CARD_RECEIVABLE   / FEE_INCOME
  */
 export const ACCOUNT_KINDS = {
@@ -23,6 +24,12 @@ export const ACCOUNT_KINDS = {
     scope: 'customer',
     allowNegative: false,
     description: 'What the customer owes on their card',
+  },
+  REFUND_PAYABLE: {
+    category: 'LIABILITY',
+    scope: 'customer',
+    allowNegative: false,
+    description: 'Overpayments owed back to the customer',
   },
   COLLATERAL_CASH: {
     category: 'ASSET',

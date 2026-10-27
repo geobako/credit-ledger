@@ -29,6 +29,13 @@
       "when": 1793117841554,
       "tag": "0003_authorizations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793118716328,
+      "tag": "0004_repayments_and_closures",
+      "breakpoints": true
     }
   ]
 }

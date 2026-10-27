@@ -6,6 +6,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { AuthorizationsModule } from './authorizations/authorizations.module';
 import { CardsModule } from './cards/cards.module';
+import { ClosureModule } from './closure/closure.module';
 import { CollateralModule } from './collateral/collateral.module';
 import { ConfigModule } from './config/config.module';
 import { CreditAccountsModule } from './credit-accounts/credit-accounts.module';
@@ -14,6 +15,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { IdempotencyModule } from './idempotency/idempotency.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { RepaymentsModule } from './repayments/repayments.module';
 import { SandboxModule } from './sandbox/sandbox.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 
@@ -66,6 +68,8 @@ export const REQUEST_ID_HEADER = 'x-request-id';
     CollateralModule,
     CardsModule,
     AuthorizationsModule,
+    RepaymentsModule,
+    ClosureModule,
     WebhooksModule,
     SandboxModule,
   ],
