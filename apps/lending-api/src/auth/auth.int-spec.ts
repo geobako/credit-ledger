@@ -29,7 +29,7 @@ describe('authentication & authorization (HTTP)', () => {
     const email = `new-${idemKey()}@acme.test`;
     const res = await t.http
       .post('/v1/auth/register')
-      .send({ email, name: 'New Customer' })
+      .send({ email, name: 'New Customer', password: 'a-long-enough-password' })
       .expect(201);
     const me = await t.http
       .get('/v1/me')
@@ -42,7 +42,11 @@ describe('authentication & authorization (HTTP)', () => {
     const statuses: number[] = [];
     for (let i = 0; i < 12; i++) {
       statuses.push(
-        (await t.http.post('/v1/auth/demo-login').send({ email: 'nobody@acme.test' })).status,
+        (
+          await t.http
+            .post('/v1/auth/login')
+            .send({ email: 'nobody@acme.test', password: 'wrong-password' })
+        ).status,
       );
     }
     expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
@@ -52,7 +56,7 @@ describe('authentication & authorization (HTTP)', () => {
   it('rejects a duplicate registration', async () => {
     await t.http
       .post('/v1/auth/register')
-      .send({ email: 'alice@acme.test', name: 'Again' })
+      .send({ email: 'alice@acme.test', name: 'Again', password: 'a-long-enough-password' })
       .expect(409);
   });
 

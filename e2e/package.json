@@ -4,7 +4,7 @@
   "type": "module",
   "description": "End-to-end suite against the running stack (docker compose up)",
   "scripts": {
-    "e2e": "node --test --test-reporter=spec lifecycle.test.ts debt.test.ts idempotency.test.ts concurrency.test.ts security.test.ts && node --test --test-reporter=spec books.test.ts",
+    "e2e": "node --test --test-reporter=spec lifecycle.test.ts debt.test.ts idempotency.test.ts concurrency.test.ts security.test.ts sessions.test.ts && node --test --test-reporter=spec books.test.ts",
     "typecheck": "tsc --noEmit",
     "load:seed": "node load-seed.ts"
   },

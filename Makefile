@@ -30,8 +30,9 @@ migrate: db ## Apply database migrations to the local Postgres
 	DATABASE_URL=postgres://acme:acme@localhost:5433/acme_credit pnpm --filter lending-api db:seed
 
 dev: migrate ## Run lending-api locally in watch mode against dockerised Postgres
-	cp -n .env.example apps/lending-api/.env 2>/dev/null || true
-	pnpm --filter lending-api start:dev
+	cp -n apps/lending-api/.env.example apps/lending-api/.env 2>/dev/null || true
+	@# Same local sign-in limit as docker-compose (production keeps 10/min), so `make e2e` works.
+	AUTH_RATE_LIMIT_PER_MINUTE=$${AUTH_RATE_LIMIT_PER_MINUTE:-300} pnpm --filter lending-api start:dev
 
 web: ## Run the web app with hot reload (expects lending-api on :3000, e.g. `make dev`)
 	pnpm --filter web dev
@@ -51,7 +52,7 @@ test: ## Run unit tests
 test-int: ## Run integration tests against a throwaway Postgres (Testcontainers, needs Docker)
 	pnpm --filter lending-api test:int
 
-e2e: ## End-to-end suite against the running stack (start it with `make up`)
+e2e: ## End-to-end suite against the running stack (`make up`, or `make dev` + `make up` for the rest)
 	pnpm --filter e2e e2e
 
 load: ## Seed 100 cards, then run the k6 load test on the compose network (stack must be up)

@@ -3,3 +3,7 @@ dist
 coverage
 pnpm-lock.yaml
 *.sql
+
+# Verbatim conversation log: keep exactly as recorded
+PROMPTS.md
+

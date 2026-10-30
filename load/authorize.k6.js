@@ -143,9 +143,14 @@ export function hotCard() {
 }
 
 export function teardown() {
-  const login = http.post(`${API}/v1/auth/demo-login`, JSON.stringify({ email: 'ops@acme.test' }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const login = http.post(
+    `${API}/v1/auth/login`,
+    JSON.stringify({
+      email: 'ops@acme.test',
+      password: __ENV.DEMO_USER_PASSWORD || 'acme-demo-password',
+    }),
+    { headers: { 'Content-Type': 'application/json' } },
+  );
   const token = login.json('accessToken');
   const report = http.get(`${API}/v1/ops/reconciliation`, {
     headers: { Authorization: `Bearer ${token}` },

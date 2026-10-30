@@ -30,7 +30,14 @@ export function configureApp(app: INestApplication): void {
   app.use(helmet());
   app.enableCors({
     origin: env.WEB_ORIGINS,
-    allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Request-Id'],
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'Idempotency-Key',
+      'X-Request-Id',
+      'X-CSRF-Protection',
+    ],
+    credentials: true,
     exposedHeaders: ['X-Request-Id', 'Idempotent-Replayed'],
   });
   app.setGlobalPrefix('v1', { exclude: ['health', 'ready', 'metrics'] });

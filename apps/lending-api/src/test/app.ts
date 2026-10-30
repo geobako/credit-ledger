@@ -7,14 +7,16 @@ import request from 'supertest';
 import type TestAgent from 'supertest/lib/agent';
 import { AppModule } from '../app.module';
 import { TokenService } from '../auth/token.service';
+import { SessionsService } from '../auth/sessions.service';
 import { UsersService } from '../auth/users.service';
+import { TransactionManager } from '../database/transaction-manager';
 import { configureApp } from '../common/http/configure-app';
 import { DEMO_USERS, seedDemoData } from '../database/seed';
 import { eq } from 'drizzle-orm';
 import { signRequest } from '../common/security/request-signature';
 import type { Database } from '../database/database';
 import { DB } from '../database/database.module';
-import { cards } from '../database/schema';
+import { cards, User } from '../database/schema';
 import { signWebhook } from '../webhooks/webhook-signature';
 
 export const TEST_WEBHOOK_SECRET = 'test-webhook-secret-0123456789-abcdefghij';
@@ -55,6 +57,10 @@ export async function createTestApp(): Promise<TestApp> {
     OUTBOX_RELAY_INTERVAL_MS: '0',
     RECONCILIATION_INTERVAL_SECONDS: '0',
     SANDBOX_ENABLED: 'true',
+    // Short, so reuse-after-grace is testable without slow tests.
+    REFRESH_REUSE_GRACE_SECONDS: '1',
+    // Short, so cross-replica revocation is testable.
+    SESSION_CHECK_CACHE_MS: '300',
     LOG_LEVEL: 'error',
     NODE_ENV: 'test',
   });
@@ -77,13 +83,20 @@ export async function createTestApp(): Promise<TestApp> {
       .set('X-Webhook-Signature', options.signature ?? signWebhook(TEST_WEBHOOK_SECRET, raw))
       .send(raw);
   };
-  const newCustomer = async () => {
-    const user = await app
-      .get(UsersService)
-      .registerCustomer(`c-${randomUUID()}@acme.test`, 'Test Customer');
-    return app.get(TokenService).issue({ userId: user.id, email: user.email, role: user.role })
+  /** A real session for the user (as a sign-in would create), and its access token. */
+  const tokenFor = async (user: User) => {
+    const session = await app
+      .get(TransactionManager)
+      .run((tx) => app.get(SessionsService).start(tx, user));
+    return app
+      .get(TokenService)
+      .issue({ userId: user.id, email: user.email, role: user.role, sessionId: session.sessionId })
       .accessToken;
   };
+  const newCustomer = async () =>
+    tokenFor(
+      await app.get(UsersService).registerCustomer(`c-${randomUUID()}@acme.test`, 'Test Customer'),
+    );
 
   return {
     app,
@@ -123,11 +136,7 @@ export async function createTestApp(): Promise<TestApp> {
       const [card] = await db.select().from(cards).where(eq(cards.creditAccountId, accountId));
       return { token, accountId, cardId: card!.id, cardToken: card!.networkToken };
     },
-    login: async (email) => {
-      const user = await app.get(UsersService).findByEmail(email);
-      return app.get(TokenService).issue({ userId: user!.id, email: user!.email, role: user!.role })
-        .accessToken;
-    },
+    login: async (email) => tokenFor((await app.get(UsersService).findByEmail(email))!),
     // Created directly: the public register endpoint is rate limited (and tested on its own).
     newCustomer,
     deliverWebhook,

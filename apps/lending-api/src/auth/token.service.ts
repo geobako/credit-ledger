@@ -12,6 +12,8 @@ interface Claims {
   sub: string;
   email: string;
   role: Role;
+  /** Session (refresh-token family) id: lets a sign-out invalidate the access token too. */
+  sid: string;
 }
 
 /**
@@ -25,7 +27,12 @@ export class TokenService {
   constructor(@Inject(ENV) private readonly env: Env) {}
 
   issue(principal: Principal): { accessToken: string; expiresIn: number } {
-    const claims: Claims = { sub: principal.userId, email: principal.email, role: principal.role };
+    const claims: Claims = {
+      sub: principal.userId,
+      email: principal.email,
+      role: principal.role,
+      sid: principal.sessionId,
+    };
     const accessToken = jwt.sign(claims, this.env.JWT_PRIVATE_KEY, {
       algorithm: ALGORITHM,
       issuer: ISSUER,
@@ -42,10 +49,15 @@ export class TokenService {
         issuer: ISSUER,
         audience: AUDIENCE,
       }) as Partial<Claims>;
-      if (!claims.sub || !claims.email || (claims.role !== 'customer' && claims.role !== 'ops')) {
+      if (
+        !claims.sub ||
+        !claims.email ||
+        !claims.sid ||
+        (claims.role !== 'customer' && claims.role !== 'ops')
+      ) {
         throw new Error('malformed claims');
       }
-      return { userId: claims.sub, email: claims.email, role: claims.role };
+      return { userId: claims.sub, email: claims.email, role: claims.role, sessionId: claims.sid };
     } catch {
       throw new UnauthenticatedError('invalid or expired access token');
     }

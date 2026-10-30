@@ -4,3 +4,7 @@
 .git
 .claude
 **/*.tsbuildinfo
+# Local env files hold developer settings and secrets: never send them to a build
+**/.env
+**/.env.*
+!**/.env.example

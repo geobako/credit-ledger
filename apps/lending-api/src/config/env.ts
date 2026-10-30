@@ -25,7 +25,32 @@ const envSchema = z
     /** ES256 key pair of the (simulated) identity provider. Generated per boot outside production. */
     JWT_PRIVATE_KEY: pem.optional(),
     JWT_PUBLIC_KEY: pem.optional(),
-    JWT_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+    /** Access tokens are short-lived; sessions continue through refresh-token rotation. */
+    JWT_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+    /** Sliding lifetime of a refresh token: a session idle this long ends. */
+    REFRESH_TOKEN_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(7 * 24 * 3600),
+    /** Absolute session lifetime, however active: forces a fresh sign-in. */
+    SESSION_MAX_AGE_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(30 * 24 * 3600),
+    /**
+     * A just-rotated refresh token presented again within this window is treated as a
+     * concurrent refresh (two tabs), not as theft.
+     */
+    REFRESH_REUSE_GRACE_SECONDS: z.coerce.number().int().min(0).default(10),
+    /**
+     * How long a replica may trust its last "session still active" answer. Bounds how long a
+     * signed-out session's access token keeps working on *other* replicas.
+     */
+    SESSION_CHECK_CACHE_MS: z.coerce.number().int().min(0).default(5_000),
+    /** Path of the refresh cookie as the browser sees it (the web app proxies /api). */
+    REFRESH_COOKIE_PATH: z.string().startsWith('/').default('/api/v1/auth'),
 
     /** Shared secret for payment-provider webhook signatures. */
     WEBHOOK_SECRET: z.string().min(32),

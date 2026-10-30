@@ -52,7 +52,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <Tip content="Sign out">
-              <Button variant="ghost" size="icon" onClick={logout} aria-label="Sign out">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => void logout()}
+                aria-label="Sign out"
+              >
                 <LogOut />
               </Button>
             </Tip>

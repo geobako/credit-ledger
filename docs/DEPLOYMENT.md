@@ -82,13 +82,13 @@ Staging first, then production, gated by approval.
 
 ## Secrets
 
-| Secret                               | Used by                   | Rotation                                                                                                                |
-| ------------------------------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `database-url`                       | lending-api, migrate      | Rotate the RDS password, update the secret, force a new deployment. Moving to RDS IAM auth removes the static password. |
-| `webhook-secret`                     | lending-api               | Coordinate with the provider; support two active secrets during the switch (planned)                                    |
-| `gateway-shared-secret`              | lending-api, card-gateway | Deploy both with old + new accepted, then remove old (planned dual-secret support)                                      |
-| `network-api-key`                    | card-gateway              | Coordinate with the card network; the mTLS certificate is the primary credential                                        |
-| `jwt-private-key` / `jwt-public-key` | lending-api               | Only for the simulated IdP. With a real IdP the API holds a JWKS URL, not a key.                                        |
+| Secret                               | Used by                   | Rotation                                                                                                                                                                      |
+| ------------------------------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `database-url`                       | lending-api, migrate      | Rotate the RDS password, update the secret, force a new deployment. Moving to RDS IAM auth removes the static password.                                                       |
+| `webhook-secret`                     | lending-api               | Coordinate with the provider; support two active secrets during the switch (planned)                                                                                          |
+| `gateway-shared-secret`              | lending-api, card-gateway | Deploy both with old + new accepted, then remove old (planned dual-secret support)                                                                                            |
+| `network-api-key`                    | card-gateway              | Coordinate with the card network; the mTLS certificate is the primary credential                                                                                              |
+| `jwt-private-key` / `jwt-public-key` | lending-api               | Signs access tokens (built-in IdP). Rotating the key signs everyone in again via their refresh tokens (no forced sign-out). With a real IdP the API holds a JWKS URL instead. |
 
 Tasks read secrets at start, so rotation means updating the secret and forcing a new
 deployment.

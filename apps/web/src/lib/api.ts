@@ -23,35 +23,64 @@ export class ApiError extends Error {
   }
 }
 
-const SESSION_KEY = 'acme-session';
+/*
+ * Session tokens.
+ *
+ * The access token (15 min) lives only in this module's memory: never in localStorage or
+ * sessionStorage, where any injected script could read it. The refresh token is an httpOnly
+ * cookie the browser sends to /api/v1/auth only; JavaScript never sees it. A reload therefore
+ * starts with no access token and silently gets a new one from the cookie.
+ */
+let accessToken: string | null = null;
+let refreshing: Promise<Session | null> | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
+let sessionListener: (session: Session | null) => void = () => {};
+/** The session provider learns about refreshes and expiries that happen inside api(). */
+export const onSessionChange = (fn: (session: Session | null) => void) => {
+  sessionListener = fn;
+};
+
+const CSRF = { 'X-CSRF-Protection': '1' };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * The access token lives in sessionStorage: it survives a reload but not the tab, and is
- * scoped to this origin. (A production app would use the IdP's httpOnly cookie flow.)
+ * Exchanges the refresh cookie for a new access token. Single-flight: concurrent callers (many
+ * queries hitting 401 at once) share one request, because each refresh rotates the cookie.
  */
-export const sessionStore = {
-  read(): Session | null {
+export function refreshSession(): Promise<Session | null> {
+  refreshing ??= (async () => {
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
-      return raw ? (JSON.parse(raw) as Session) : null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await fetch('/api/v1/auth/refresh', { method: 'POST', headers: CSRF });
+        if (res.ok) {
+          const session = (await res.json()) as Session;
+          accessToken = session.accessToken;
+          return session;
+        }
+        const problem = (await res.json().catch(() => ({}))) as Partial<Problem>;
+        // Another tab rotated the cookie a moment ago; the browser now holds the new one.
+        if (problem.code !== 'REFRESH_TOKEN_SUPERSEDED') break;
+        await sleep(150);
+      }
     } catch {
-      return null;
+      /* offline or API down: treated as signed out */
     }
-  },
-  write(session: Session | null) {
-    try {
-      if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      else sessionStorage.removeItem(SESSION_KEY);
-    } catch {
-      /* storage unavailable: session stays in memory only */
-    }
-  },
-};
+    accessToken = null;
+    return null;
+  })().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
 
-let onUnauthorized: () => void = () => {};
-export const setUnauthorizedHandler = (fn: () => void) => {
-  onUnauthorized = fn;
-};
+export async function signOut(): Promise<void> {
+  accessToken = null;
+  await fetch('/api/v1/auth/logout', { method: 'POST', headers: CSRF }).catch(() => undefined);
+}
 
 export interface RequestOptions {
   method?: 'GET' | 'POST';
@@ -61,10 +90,14 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
-export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const session = sessionStore.read();
+export async function api<T>(
+  path: string,
+  options: RequestOptions = {},
+  retried = false,
+): Promise<T> {
+  const token = accessToken;
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (session) headers.Authorization = `Bearer ${session.accessToken}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey;
 
@@ -86,7 +119,13 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     });
   }
 
-  if (response.status === 401 && session) onUnauthorized();
+  // Expired access token: refresh once and replay. Safe for writes too, because they carry
+  // an Idempotency-Key and the server never acted on a request it rejected as unauthenticated.
+  if (response.status === 401 && token && !retried && !path.startsWith('/v1/auth/')) {
+    const session = await refreshSession();
+    sessionListener(session);
+    if (session) return api<T>(path, options, true);
+  }
   const text = await response.text();
   const payload: unknown = text ? JSON.parse(text) : undefined;
   if (!response.ok) {

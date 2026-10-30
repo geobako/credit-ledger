@@ -10,7 +10,12 @@ describe('TokenService', () => {
     GATEWAY_SHARED_SECRET: 'g'.repeat(32),
   });
   const tokens = new TokenService(env);
-  const principal = { userId: 'u1', email: 'a@acme.test', role: 'customer' as const };
+  const principal = {
+    userId: 'u1',
+    email: 'a@acme.test',
+    role: 'customer' as const,
+    sessionId: 's1',
+  };
 
   it('round-trips a principal', () => {
     expect(tokens.verify(tokens.issue(principal).accessToken)).toEqual(principal);
@@ -31,6 +36,15 @@ describe('TokenService', () => {
       audience: 'lending-api',
     });
     expect(() => tokens.verify(unsigned)).toThrow(UnauthenticatedError);
+  });
+
+  it('rejects tokens without a session id (issued outside a sign-in)', () => {
+    const sessionless = jwt.sign({ sub: 'u1', email: 'x', role: 'customer' }, env.JWT_PRIVATE_KEY, {
+      algorithm: 'ES256',
+      issuer: 'acme-credit-idp',
+      audience: 'lending-api',
+    });
+    expect(() => tokens.verify(sessionless)).toThrow(UnauthenticatedError);
   });
 
   it('rejects tokens from another issuer key', () => {

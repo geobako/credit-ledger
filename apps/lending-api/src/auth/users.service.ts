@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { NotFoundError } from '../common/errors/domain-error';
-import type { Database } from '../database/database';
+import type { Database, Transaction } from '../database/database';
 import { DB } from '../database/database.module';
 import { isPgError, PgErrorCode } from '../database/pg-errors';
 import { User, users } from '../database/schema';
@@ -15,12 +15,21 @@ export class UsersService {
     private readonly events: DomainEvents,
   ) {}
 
-  async registerCustomer(email: string, name: string): Promise<User> {
+  /**
+   * Creates a customer. With `then`, more work (starting a session) joins the same transaction,
+   * so a registration never exists without its first session or vice versa.
+   */
+  async registerCustomer<T = User>(
+    email: string,
+    name: string,
+    passwordHash: string | null = null,
+    then?: (tx: Transaction, user: User) => Promise<T>,
+  ): Promise<T> {
     try {
       return await this.db.transaction(async (tx) => {
         const [user] = await tx
           .insert(users)
-          .values({ email: email.toLowerCase(), name, role: 'customer' })
+          .values({ email: email.toLowerCase(), name, role: 'customer', passwordHash })
           .returning();
         // No email or name: the audit trail is immutable and must not hold personal data.
         await this.events.emit(tx, {
@@ -29,7 +38,7 @@ export class UsersService {
           entityId: user!.id,
           data: { userId: user!.id, role: user!.role },
         });
-        return user!;
+        return then ? then(tx, user!) : (user! as T);
       });
     } catch (error) {
       if (isPgError(error, PgErrorCode.UniqueViolation)) {

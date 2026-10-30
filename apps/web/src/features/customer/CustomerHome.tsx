@@ -163,8 +163,9 @@ function AccountDashboard({ account }: { account: CreditAccount }) {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-6">
-          <Panel className="p-5 sm:p-6">
-            <div className="grid items-center gap-8 md:grid-cols-[minmax(0,400px)_1fr]">
+          <Panel className="@container p-5 sm:p-6">
+            {/* Side by side only when the panel itself is wide enough, whatever the viewport. */}
+            <div className="grid items-center gap-8 @3xl:grid-cols-[minmax(0,400px)_1fr]">
               <VirtualCard card={card} holder={session!.user.name} />
               {active ? (
                 <CreditRing account={account} />

@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from 'pg';
+import { hashPassword } from '../auth/passwords';
 import { users } from './schema';
 
 /** Demo identities for the simulated IdP. Fixed ids keep links and docs stable. */
@@ -24,14 +25,18 @@ export const DEMO_USERS = [
   },
 ] as const;
 
+/** Local/demo only: the seed never runs in deployed environments. */
+export const DEMO_PASSWORD = process.env.DEMO_USER_PASSWORD ?? 'acme-demo-password';
+
 export async function seedDemoData(databaseUrl: string) {
   const client = new Client({ connectionString: databaseUrl, application_name: 'seed' });
   await client.connect();
   try {
+    const passwordHash = await hashPassword(DEMO_PASSWORD);
     await drizzle(client)
       .insert(users)
-      .values([...DEMO_USERS])
-      .onConflictDoNothing();
+      .values(DEMO_USERS.map((u) => ({ ...u, passwordHash })))
+      .onConflictDoUpdate({ target: users.id, set: { passwordHash } });
   } finally {
     await client.end();
   }

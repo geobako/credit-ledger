@@ -140,8 +140,36 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   role: userRole('role').notNull().default('customer'),
+  /** scrypt hash (see auth/passwords.ts). Never the password, never logged. */
+  passwordHash: text('password_hash'),
   createdAt: createdAt(),
 });
+
+/**
+ * Refresh tokens: only a SHA-256 of the opaque token is stored, so a database leak yields no
+ * usable tokens. Each sign-in starts a `family`; every refresh consumes one token and issues
+ * the next in the same family. Presenting an already-consumed token means it was copied:
+ * the whole family is revoked.
+ */
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    familyId: uuid('family_id').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    /** Sliding expiry of this token. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** Absolute end of the session, whatever the activity. */
+    familyExpiresAt: timestamp('family_expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('refresh_tokens_family_idx').on(t.familyId)],
+);
 
 // ── Credit accounts & cards ─────────────────────────────────────────────────
 //
@@ -474,6 +502,7 @@ export type LedgerAccount = typeof ledgerAccounts.$inferSelect;
 export type JournalEntry = typeof journalEntries.$inferSelect;
 export type Posting = typeof postings.$inferSelect;
 export type User = typeof users.$inferSelect;
+export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type CreditAccount = typeof creditAccounts.$inferSelect;
 export type Card = typeof cards.$inferSelect;
 export type CollateralDeposit = typeof collateralDeposits.$inferSelect;

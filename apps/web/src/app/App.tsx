@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/misc';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { useSession } from '@/features/auth/session';
 import { CustomerHome } from '@/features/customer/CustomerHome';
+import { Logo } from '@/components/Logo';
 import { AppShell } from './AppShell';
 
 // Customers never download the back-office bundle.
@@ -13,6 +14,7 @@ const OpsConsole = lazy(() =>
 
 export function App() {
   const { session } = useSession();
+  if (session === undefined) return <Splash />;
   if (!session) return <LoginPage />;
   const home = session.user.role === 'ops' ? '/ops' : '/';
   return (
@@ -32,5 +34,14 @@ export function App() {
         <Route path="*" element={<Navigate to={home} replace />} />
       </Routes>
     </AppShell>
+  );
+}
+
+/** Shown for the moment it takes to restore a session from the refresh cookie. */
+function Splash() {
+  return (
+    <div className="grid min-h-screen place-items-center">
+      <Logo className="size-10 animate-pulse" />
+    </div>
   );
 }

@@ -348,9 +348,21 @@ late approval was found and reversed, and no hold remained.
 
 Full analysis: [THREAT_MODEL.md](THREAT_MODEL.md). Summary:
 
-- **Authentication.** ES256 JWTs from a simulated identity provider (the brief allows one),
-  with issuer and audience pinned and short TTLs. In production the keys come from Secrets
-  Manager; a real deployment would verify a real IdP's JWKS instead.
+- **Authentication.** Email and password (scrypt-hashed, generic error and constant-time
+  check so emails can't be enumerated, 10 attempts per minute per IP). A session is two
+  tokens ([ADR 0008](adr/0008-sessions-with-rotating-refresh-tokens.md)):
+  - a **15-minute ES256 access JWT** (issuer, audience and algorithm pinned), held only in the
+    browser's memory;
+  - a **rotating refresh token** in an `httpOnly`, `SameSite=Strict` cookie scoped to
+    `/api/v1/auth`, stored server-side only as a SHA-256 hash. Each refresh consumes it and
+    issues the next. Replaying a consumed token revokes the whole session (theft detection),
+    and sign-out revokes it server-side. Access tokens carry the session id, so a revoked
+    session's access token stops working too (at once locally, within 5 s on other replicas). Refresh and sign-out also require a custom header,
+    so another site can't trigger them with the user's cookie.
+
+  The identity provider is part of this service because the brief allows a simulated one; a
+  real deployment would delegate to an OIDC provider and only verify its JWKS.
+
 - **Authorization.** A global guard denies by default; routes opt out with `@Public()` or require
   `@Roles('ops')`. Every resource is loaded through `findAccessible(principal, id)`. Another
   customer's account returns **404, not 403**, so existence is not leaked. Charge-off is
@@ -467,9 +479,15 @@ flowchart TB
   (~1–5 ms → hundreds of authorizations per second per card, far above any real card).
 - **Holds outside the ledger.** It matches issuer practice and keeps the ledger meaningful.
   The cost is that reconciliation must check holds separately (it does).
-- **Simulated IdP, payment provider and card network.** They are part of the brief. The seams
-  are real: JWT verification, signed webhooks, the signed gateway protocol and mTLS at the
-  edge.
+- **Built-in identity provider, simulated payment provider and card network.** They are part
+  of the brief. The seams are real: password sign-in with rotating refresh tokens, JWT
+  verification, signed webhooks, the signed gateway protocol and mTLS at the edge.
+- **Session check on every request, cached briefly.** Access tokens carry their session id,
+  and the auth guard rejects tokens whose session was signed out or revoked. Each replica
+  caches "still active" for 5 s (`SESSION_CHECK_CACHE_MS`), so it costs at most one indexed
+  read per session per 5 s rather than one per request. Revocations apply at once on the
+  replica that made them, and within 5 s everywhere else. A shared cache (Redis) or
+  pub/sub invalidation would make that instant across replicas.
 - **In-memory compensation queue in the gateway.** It is simple and survives graceful
   restarts. A hard crash could leave a stray hold until it expires (default 7 days), and it is
   logged and alarmed. In production this queue would be durable (SQS).

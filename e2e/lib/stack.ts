@@ -14,6 +14,9 @@ export const config = {
   gatewaySecret:
     process.env.GATEWAY_SHARED_SECRET ?? 'local-dev-gateway-secret-change-me-0123456789',
   networkKey: process.env.NETWORK_API_KEY ?? 'local-dev-network-key-change-me',
+  /** The web app's nginx, which proxies /api to the lending API (the browser's view). */
+  web: process.env.WEB_URL ?? 'http://localhost:8080',
+  demoPassword: process.env.DEMO_USER_PASSWORD ?? 'acme-demo-password',
 };
 
 export interface Money {
@@ -85,14 +88,16 @@ export class Actor {
 export async function newCustomer(label = 'e2e'): Promise<Actor> {
   const email = `${label}-${randomUUID().slice(0, 8)}@e2e.test`;
   const res = await http(`${config.api}/v1/auth/register`, {
-    body: { email, name: `E2E ${label}` },
+    body: { email, name: `E2E ${label}`, password: 'e2e-password-long-enough' },
   });
   expect(res, 201);
   return new Actor(res.body.accessToken, res.body.user);
 }
 
 export async function ops(): Promise<Actor> {
-  const res = await http(`${config.api}/v1/auth/demo-login`, { body: { email: 'ops@acme.test' } });
+  const res = await http(`${config.api}/v1/auth/login`, {
+    body: { email: 'ops@acme.test', password: config.demoPassword },
+  });
   expect(res, 200);
   return new Actor(res.body.accessToken, res.body.user);
 }

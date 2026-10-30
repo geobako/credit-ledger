@@ -31,11 +31,11 @@ pnpm install
 make up        # Postgres, migrations, lending-api, card-gateway and the web app
 ```
 
-|                             |                                                                                                                            |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Web app**                 | http://localhost:8080. Sign in as **Alice** or **Bob** (customers) or **Olivia** (operations), or register a new customer. |
-| API + OpenAPI docs          | http://localhost:3000/docs                                                                                                 |
-| Card gateway (network side) | http://localhost:8081 (header `X-Network-Key: local-dev-network-key-change-me`)                                            |
+|                             |                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web app**                 | http://localhost:8080. Sign in as **Alice** or **Bob** (customers) or **Olivia** (operations), password `acme-demo-password`, or create your own account. |
+| API + OpenAPI docs          | http://localhost:3000/docs                                                                                                                                |
+| Card gateway (network side) | http://localhost:8081 (header `X-Network-Key: local-dev-network-key-change-me`)                                                                           |
 
 `make down` stops everything; `make reset` also wipes the database.
 
@@ -97,6 +97,11 @@ make dev         # Postgres in Docker + lending-api in watch mode (:3000)
 make web         # web app with hot reload (:5173, proxies /api to :3000)
 ```
 
+Configuration: `make up` needs none (docker-compose.yml sets everything). `make dev` runs the API
+on your machine and reads `apps/lending-api/.env`, created from
+[`apps/lending-api/.env.example`](apps/lending-api/.env.example) on first run. All options and
+defaults are in [`src/config/env.ts`](apps/lending-api/src/config/env.ts).
+
 ## Tests
 
 | Command                             | What runs                                                                                                                                                                |
@@ -127,7 +132,8 @@ including the full Docker stack with the E2E suite and a load smoke test.
 
 ## What's simulated
 
-The identity provider (passwordless demo sign-in issuing real ES256 JWTs), the payment provider
+The identity provider (real email/password sign-in with rotating refresh tokens, but built
+into the API rather than an external OIDC provider; demo users are seeded locally only), the payment provider
 (the sandbox sends signed webhooks through the production code path) and the card network (the
 web simulator and the Go gateway's network API). The sandbox is refused at startup in
 production and blocked at the WAF.
